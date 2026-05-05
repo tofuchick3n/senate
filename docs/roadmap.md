@@ -8,43 +8,37 @@
 | 2 | Synthesis step with lead fallback | Done | - |
 | 3 | Streaming TUI dashboard | TODO | high |
 | 4 | Conversation mode / follow-ups | TODO | medium |
-| 5 | Structured output | TODO | medium |
-| 6 | stdin support | TODO | medium |
-| 7 | Make orchestrator opt-in | TODO | medium |
-| 8 | First-class disagreement detection | TODO | medium |
+| 5 | Structured output | Done | - |
+| 6 | stdin support | Done | - |
+| 7 | Make orchestrator opt-in | Done | - |
+| 8 | First-class disagreement detection | Done | - |
 | 9 | Engine config surface | Done | - |
 | 10 | Cost / usage awareness | TODO | low |
-| 11 | Cancel + partial results | TODO | low |
+| 11 | Cancel + partial results | Done | - |
 | 12 | Persistent transcripts | TODO | low |
 
 ## Done
 
-1. Parallel advisor execution using `Promise.allSettled` for concurrent engine runs.
-2. Synthesis step falls back through lead engines (claude → vibe → gemini) producing structured CONSENSUS/DISAGREEMENTS/OUTLIERS/RECOMMENDATION output.
+1. **Parallel advisor execution** — `Promise.allSettled` for concurrent engine runs (#1).
+2. **Synthesis step** — Lead summarizer with fallback claude → vibe → gemini, structured CONSENSUS/DISAGREEMENTS/OUTLIERS/RECOMMENDATION output (#1, #3).
+5. **Structured output** — `--json` (final WorkflowResult blob) and `--json-stream` (NDJSON events: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, `result`). Mutually exclusive (#2).
+6. **stdin support** — When stdin is piped, contents become the prompt or are appended to the positional argument as additional context (#2).
+7. **Orchestrator opt-in** — Default is parallel-consult + synthesize, no Claude round-trip. `--smart` opts into the orchestrator routing decision (#2).
+8. **First-class disagreement detection** — `SynthesisResult.structured` exposes `{ consensus, disagreements: [{topic, positions:[{engine,stance}]}], outliers, recommendation }`. Synthesizer is prompted for JSON; prose is rendered deterministically. Falls back to raw output on parse failure (#3).
+9. **Engine config surface** — `src/registry.ts` is the single source of truth: bin/args/parse, per-engine auth patterns, synthesis priority, default-advisors membership, health-check timeout. `SENATE_<NAME>_BIN` env vars override bin paths. Per-engine flags via `~/.senate/config.json` was scoped out — defer until a real need surfaces (#4).
+11. **Cancel + partial results** — Ctrl-C cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace), kills the whole subprocess group, prints whatever finished, exits 130. Second Ctrl-C exits immediately (#3).
 
 ## Next up
 
-3. Streaming TUI dashboard with per-advisor panels showing spinner, elapsed time, and last output line, expandable via number keys.
+3. **Streaming TUI dashboard** — Per-advisor panels with spinner, elapsed time, and last output line, expandable via number keys. Biggest UX upgrade still on the table.
 
 ## Backlog
 
-4. **Conversation mode / follow-ups** — Add a REPL after results that carries the transcript into subsequent turns for multi-step interactions.
+4. **Conversation mode / follow-ups** — REPL after results that carries the transcript into subsequent turns. Most natural after #3 lands so the panels can host follow-up input.
 
-5. **Structured output** — Support `--json` for a final output blob and `--json-stream` for NDJSON events (engine_start, engine_chunk, engine_done, synthesis_start, synthesis_done).
+10. **Cost / usage awareness** — Display per-engine wall-clock time and token counts in the footer. Token counts require parsing each CLI's stderr / stdout for usage hints (or a future structured output mode).
 
-6. **stdin support** — Read the prompt from stdin when not a TTY, enabling pipeline integration.
-
-7. **Make orchestrator opt-in** — Default to consult-all + synthesize without the Claude round-trip; require `--smart` for full orchestration.
-
-8. **First-class disagreement detection** — Synthesizer returns structured JSON with consensus, disagreements (topic + positions per engine), and outliers.
-
-9. **Engine config surface** — _Done._ `src/registry.ts` is now the single source of truth: bin/args/parse, per-engine auth patterns, synthesis priority, and default-advisors membership all live in one entry per engine. Bin paths can be overridden with `SENATE_<NAME>_BIN`. Per-engine flags via `~/.senate/config.json` was scoped out — defer until a real need surfaces.
-
-10. **Cost / usage awareness** — Display per-engine wall-clock time and token counts in the footer.
-
-11. **Cancel + partial results** — Handle SIGINT to cancel in-flight requests and print whatever results finished.
-
-12. **Persistent transcripts** — Store sessions at `~/.senate/sessions/<timestamp>.jsonl` and enable `--resume` to continue from a saved state.
+12. **Persistent transcripts** — Store sessions at `~/.senate/sessions/<timestamp>.jsonl` and enable `--resume` to continue from a saved state. `.senate/` is already gitignored in anticipation.
 
 ## Inspiration
 
