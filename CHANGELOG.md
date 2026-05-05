@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Conversation REPL (#4). After the first result, `--repl` drops into a `senate>` prompt. Each follow-up turn is enriched with prior conversation context (using the synthesis recommendation when available, falling back to synthesis prose, then raw advisor outputs). REPL commands: `/exit`, `/quit`, `/clear` (drop context), `/history` (list prior turns). Each turn gets its own TUI panel and transcript file. Skipped automatically in machine modes, when stdin is piped, or after a cancelled run.
 - Live TUI dashboard (#3) via `log-update` (one new runtime dep, no React/JSX). Per-advisor row with animated spinner, ticking elapsed time, and status glyph. Synthesis + execute rows appear when those phases start. Auto-activates in human + TTY mode; auto-disables when stdout/stderr are piped, with `--json`/`--json-stream`, or with explicit `--no-tui`. Renders to stderr so the final result on stdout stays clean for piping.
 - `--no-tui` flag.
 - Cost / usage awareness (#10). `EngineResult.usage` now carries `{ inputTokens, outputTokens, totalTokens, costUsd }` when the wrapped CLI surfaces them. Claude (`--output-format json`) provides full token counts and total USD cost. Gemini (`--output-format json`) provides token counts (sums across models if more than one ran). Vibe stays in text mode — its JSON output is heavyweight and tokens aren't surfaced in the cheap path.
