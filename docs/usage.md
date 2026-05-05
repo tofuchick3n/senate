@@ -55,9 +55,10 @@ gemini: ❌ (binary not found)
 
 ## Modes
 
-By default, the orchestrator (Claude) decides whether to run consult and execute phases.
+By default, senate consults all selected advisors in parallel and synthesizes their responses (no orchestrator round-trip). Use `--smart` to let Claude decide whether to run consult and/or execute phases.
 
-- **Default**: Orchestrator-driven. Advisors run in parallel; synthesis runs when ≥2 succeed.
+- **Default**: All advisors run in parallel; synthesis runs when ≥2 succeed.
+- **`--smart`**: Orchestrator-driven. Claude decides routing between consult and execute phases.
 - **`--consult-only`**: Only consult advisors. Implies `execute=false`. Skips orchestrator round-trip.
 - **`--execute-only`**: Only execute via vibe. Implies `consult=false`. Skips orchestrator round-trip.
 - **`--no-consult` / `--no-execute`**: Skip the respective phase without affecting the other.
@@ -101,3 +102,23 @@ Common failure modes:
 - Pipe long context inline: `cat file.txt | xargs -0 senate --consult-only`
 - Use `--consult-only` for fastest feedback (no execution overhead)
 - Use `--verbose` to confirm active mode and selected advisors at startup
+
+## Pipeline use
+
+Stdin is supported in addition to positional arguments. When both are provided, they are concatenated as `<positional>\n\n<stdin>`.
+
+```bash
+echo "prompt" | senate
+senate < spec.md
+senate "context:" < details.md
+```
+
+Use `--json` to output the final `WorkflowResult` as a single JSON blob on stdout:
+
+```bash
+senate "..." --json | jq .synthesis.output
+```
+
+Use `--json-stream` for NDJSON events on stdout as they occur. Event types include: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, plus a final `{type:'result', result:...}`. In machine modes (`--json` or `--json-stream`), progress chatter is silenced (no banner, no spinner, no section headers). Errors are emitted to stdout as `{type:'error', message:'...'}` for easy parsing.
+
+> **Note**: `--json` and `--json-stream` are mutually exclusive. Using both exits with code 2.
