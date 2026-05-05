@@ -120,8 +120,9 @@ export async function startRepl(
         const result = await deps.runTurn(enriched, line);
         deps.printResult(result);
         turns.push({ prompt: line, result });
-      } catch (err: any) {
-        process.stderr.write(`\n[error] ${err.message}\n`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n[error] ${msg}\n`);
       }
       if (signalAborted()) {
         cleanup();

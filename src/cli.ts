@@ -221,31 +221,54 @@ program
         if (transcript) console.log(`(saved to ${transcript.path})`);
       }
 
-      // REPL: only in human + interactive mode. Skip if cancelled, machine modes, or stdin already piped (one-shot).
-      const replEnabled = options.repl && !machineMode && !stdinPiped && !result.cancelled && process.stdin.isTTY;
+      // REPL: only in human + interactive mode. Skip if cancelled, machine modes, or no TTY.
+      // process.stdin.isTTY already covers the "stdin piped" case.
+      const replEnabled = options.repl && !machineMode && !result.cancelled && process.stdin.isTTY;
       if (replEnabled) {
-        process.stderr.write(`\n[repl] Enter follow-up questions (prior turns kept as context). /exit to quit.\n`);
+        // The outer SIGINT handler used `controller`, which is a one-shot AbortController. Once
+        // aborted it stays aborted, which would kill every subsequent REPL turn. Detach the outer
+        // handler before entering the REPL — each turn manages its own controller.
+        process.off('SIGINT', onSigint);
+
+        process.stderr.write(`\n[repl] Enter follow-up questions (prior turns kept as context). /exit to quit. Ctrl-C cancels current turn.\n`);
         await startRepl(
           { prompt: query, result },
           {
             runTurn: async (enrichedPrompt: string, _displayPrompt: string) => {
+              const turnController = new AbortController();
+              let turnSigintCount = 0;
+              const turnSigint = () => {
+                turnSigintCount++;
+                if (turnSigintCount === 1) {
+                  process.stderr.write('\n[cancel] aborting current turn (Ctrl-C again to exit)\n');
+                  turnController.abort();
+                } else {
+                  process.exit(130);
+                }
+              };
+              process.on('SIGINT', turnSigint);
+
               // Each REPL turn gets its own TUI, transcript, and cancel-aware execution.
               const turnTui = (options.tui !== false && process.stderr.isTTY) ? startTui() : null;
-              const turnTranscript = wantTranscript ? new (await import('./transcripts.js')).TranscriptWriter(enrichedPrompt, transcriptMode) : null;
+              const turnTranscript = wantTranscript ? new TranscriptWriter(enrichedPrompt, transcriptMode) : null;
               const turnOnEvent = (e: WorkflowEvent) => {
                 turnTui?.onEvent(e);
                 turnTranscript?.appendEvent(e);
               };
-              const turnResult = await runWorkflow(enrichedPrompt, { ...mode, onEvent: turnOnEvent });
-              turnTui?.stop(turnResult);
-              turnTranscript?.end(turnResult);
-              return turnResult;
+              try {
+                const turnResult = await runWorkflow(enrichedPrompt, { ...mode, onEvent: turnOnEvent, signal: turnController.signal });
+                turnTui?.stop(turnResult);
+                turnTranscript?.end(turnResult);
+                return turnResult;
+              } finally {
+                process.off('SIGINT', turnSigint);
+              }
             },
             printResult: (r) => {
               console.log(formatWorkflowResult(r));
             }
           },
-          () => controller.signal.aborted
+          () => false  // Per-turn controllers handle cancellation; never report "session aborted" to the REPL.
         );
       }
 
