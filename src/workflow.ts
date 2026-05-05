@@ -220,8 +220,35 @@ export function formatWorkflowResult(result: WorkflowResult): string {
 
   lines.push('');
   lines.push(rule);
-  lines.push(`  total ${result.totalDurationMs}ms`);
+  lines.push(`  USAGE`);
+  lines.push(rule);
+  for (const r of result.advisorResults) {
+    const elapsed = formatElapsed(r.durationMs);
+    let usagePart = '';
+    if (r.usage) {
+      const u = r.usage;
+      const tokens = u.totalTokens != null
+        ? `${u.totalTokens} tok` + (u.inputTokens != null && u.outputTokens != null ? ` (${u.inputTokens} in / ${u.outputTokens} out)` : '')
+        : '';
+      const cost = u.costUsd != null ? `  $${u.costUsd.toFixed(4)}` : '';
+      usagePart = tokens ? `  ${tokens}${cost}` : cost;
+    }
+    lines.push(`  ${r.name.padEnd(20)} ${elapsed.padStart(7)}${usagePart}`);
+  }
+  if (result.synthesis) {
+    lines.push(`  ${('synthesis (' + result.synthesis.engine + ')').padEnd(20)} ${formatElapsed(result.synthesis.durationMs).padStart(7)}`);
+  }
+  if (result.executionResult) {
+    lines.push(`  ${'execute (vibe)'.padEnd(20)} ${formatElapsed(result.executionResult.durationMs).padStart(7)}`);
+  }
+  lines.push(`  ${'─'.repeat(20)} ${'─'.repeat(7)}`);
+  lines.push(`  ${'total'.padEnd(20)} ${formatElapsed(result.totalDurationMs).padStart(7)}`);
   lines.push('');
 
   return lines.join('\n');
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }

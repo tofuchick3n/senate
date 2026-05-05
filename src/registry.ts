@@ -11,6 +11,13 @@
  * falling back to the default binary name on PATH.
  */
 
+export type EngineUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  costUsd?: number;
+};
+
 export type EngineEntry = {
   name: string;
   /** Resolved binary path (env override or default name on PATH). */
@@ -21,6 +28,8 @@ export type EngineEntry = {
   binOverridden: boolean;
   args: (prompt: string) => string[];
   parse: (stdout: string) => string;
+  /** Optional usage extractor — parses tokens / cost from raw stdout (and stderr) when the engine surfaces them. Return undefined if the data isn't there. */
+  parseUsage?: (stdout: string, stderr: string) => EngineUsage | undefined;
   /** Substrings (lower-cased, matched on combined stdout+stderr) that mean "auth required". Per-engine to avoid cross-contamination. */
   authPatterns: string[];
   /** True if this engine is eligible to lead the synthesis step. Order in REGISTRY = synthesis priority. */
@@ -50,6 +59,74 @@ function entry(spec: Omit<EngineEntry, 'bin' | 'binOverridden'>): EngineEntry {
 }
 
 /**
+ * Best-effort JSON extractor for engine output that may include leading chatter
+ * (gemini prints "Skill conflict detected" / "Ripgrep is not available" warnings
+ * before its JSON). Pulls the first balanced object spanning '{' to last '}'.
+ */
+function extractFirstJson(text: string): string | null {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  return text.slice(start, end + 1);
+}
+
+/**
+ * Parser for claude `-p ... --output-format json`. Output is a single-line JSON
+ * with shape: { result, usage: { input_tokens, output_tokens }, total_cost_usd }.
+ * Exported for tests.
+ */
+export function parseClaudeJson(stdout: string): { text: string; usage?: EngineUsage } {
+  const json = extractFirstJson(stdout);
+  if (!json) return { text: stdout.trim() };
+  try {
+    const obj = JSON.parse(json);
+    const text = typeof obj.result === 'string' ? obj.result : stdout.trim();
+    const u = obj.usage;
+    if (!u) return { text };
+    const inputTokens = typeof u.input_tokens === 'number' ? u.input_tokens : undefined;
+    const outputTokens = typeof u.output_tokens === 'number' ? u.output_tokens : undefined;
+    const totalTokens = inputTokens != null && outputTokens != null ? inputTokens + outputTokens : undefined;
+    const costUsd = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : undefined;
+    return { text, usage: { inputTokens, outputTokens, totalTokens, costUsd } };
+  } catch {
+    return { text: stdout.trim() };
+  }
+}
+
+/**
+ * Parser for gemini `-p ... --output-format json`. stdout has noise then JSON.
+ * Shape: { response, stats: { models: { <model>: { tokens: { input, candidates, total } } } } }.
+ * Exported for tests.
+ */
+export function parseGeminiJson(stdout: string): { text: string; usage?: EngineUsage } {
+  const json = extractFirstJson(stdout);
+  if (!json) return { text: stdout.trim() };
+  try {
+    const obj = JSON.parse(json);
+    const text = typeof obj.response === 'string' ? obj.response : stdout.trim();
+    const models = obj.stats?.models;
+    if (!models || typeof models !== 'object') return { text };
+    // Sum across all models that ran (usually just one).
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let totalTokens = 0;
+    let any = false;
+    for (const m of Object.values(models) as any[]) {
+      const t = m?.tokens;
+      if (!t) continue;
+      any = true;
+      if (typeof t.input === 'number') inputTokens += t.input;
+      if (typeof t.candidates === 'number') outputTokens += t.candidates;
+      if (typeof t.total === 'number') totalTokens += t.total;
+    }
+    if (!any) return { text };
+    return { text, usage: { inputTokens, outputTokens, totalTokens } };
+  } catch {
+    return { text: stdout.trim() };
+  }
+}
+
+/**
  * Engine registry. Order matters: it determines synthesis lead priority.
  * Claude is first because it produces the most reliable structured output.
  */
@@ -57,8 +134,9 @@ const REGISTRY: EngineEntry[] = [
   entry({
     name: 'claude',
     defaultBinName: 'claude',
-    args: (p) => ['-p', p, '--permission-mode', 'bypassPermissions'],
-    parse: (stdout) => stdout.trim(),
+    args: (p) => ['-p', p, '--permission-mode', 'bypassPermissions', '--output-format', 'json'],
+    parse: (stdout) => parseClaudeJson(stdout).text,
+    parseUsage: (stdout) => parseClaudeJson(stdout).usage,
     authPatterns: [
       'not logged in',
       'please run /login',
@@ -93,8 +171,9 @@ const REGISTRY: EngineEntry[] = [
   entry({
     name: 'gemini',
     defaultBinName: 'gemini',
-    args: (p) => ['-p', p, '--skip-trust', '--output-format', 'text'],
-    parse: (stdout) => stdout.trim(),
+    args: (p) => ['-p', p, '--skip-trust', '--output-format', 'json'],
+    parse: (stdout) => parseGeminiJson(stdout).text,
+    parseUsage: (stdout) => parseGeminiJson(stdout).usage,
     authPatterns: [
       'must specify the gemini_api_key',
       'api key not set',

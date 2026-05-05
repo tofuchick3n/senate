@@ -7,12 +7,15 @@ import {
   getSynthesisPriority
 } from './registry.js';
 
+import type { EngineUsage } from './registry.js';
+
 export type EngineResult = {
   name: string;
   status: 'ok' | 'error' | 'missing' | 'unauthenticated' | 'cancelled';
   output: string;
   durationMs: number;
   error?: string;
+  usage?: EngineUsage;
 };
 
 export type RunEngineOptions = {
@@ -170,11 +173,14 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
         });
       }
 
+      const output = config.parse(stdout);
+      const usage = config.parseUsage?.(stdout, stderr);
       resolve({
         name,
         status: 'ok',
-        output: config.parse(stdout),
-        durationMs
+        output,
+        durationMs,
+        ...(usage ? { usage } : {})
       });
     });
   });
