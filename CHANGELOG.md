@@ -7,12 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Cost / usage awareness (#10). `EngineResult.usage` now carries `{ inputTokens, outputTokens, totalTokens, costUsd }` when the wrapped CLI surfaces them. Claude (`--output-format json`) provides full token counts and total USD cost. Gemini (`--output-format json`) provides token counts (sums across models if more than one ran). Vibe stays in text mode — its JSON output is heavyweight and tokens aren't surfaced in the cheap path.
+- New `▸ USAGE` block in the human-mode footer: per-engine wall-clock + tokens + cost where available, plus synthesis / execute timings, plus a total row.
+- Per-engine `parseUsage(stdout, stderr)` hook in the registry. Returns `EngineUsage | undefined`.
+- Tests for `parseClaudeJson` and `parseGeminiJson` (response extraction, usage parsing, malformed-input handling, multi-model summing, leading-noise stripping).
 - Persistent transcripts (#12). Each session is written to `~/.senate/sessions/<utc>-<seq>.jsonl` as JSONL: a `session_start` line, all `WorkflowEvent`s as they occur, and a final `session_end` line carrying the full `WorkflowResult`. Best-effort write — transcript IO failures never block the run.
 - `--no-transcript` flag — opts out of session persistence.
 - `--list-sessions [count]` — prints recent sessions (default 20) with timestamp, advisors, prompt preview, cancel marker.
 - `--resume <ref>` — reprints a saved session. `<ref>` is either an integer index into `--list-sessions` (0 = newest) or a literal file path.
 - `src/transcripts.ts` exports `TranscriptWriter`, `loadSession`, `listSessions`, `resolveSessionRef`.
 - Test suite (`node:test`, zero deps): unit tests for the registry (`resolveBin`, default advisors, synthesis priority, per-engine auth patterns, regression test for the gemini→claude cross-contamination bug) and synthesis (`extractJson`, `parseStructured`, `renderSynthesis`). Wired into CI via `npm test` on Node 18 + 20.
+
+### Changed
+- Claude and Gemini now invoke their CLIs in JSON output mode (`--output-format json`). Response text is extracted from the JSON envelope; pre-existing behavior is unchanged for callers (still get a string back from `engineResult.output`), but token counts and cost are now available on `engineResult.usage`.
 - Transcript-module tests (writer round-trip, sort order, prompt preview truncation, junk-file resilience, ref resolution).
 
 ## [0.2.0] - 2026-05-06
