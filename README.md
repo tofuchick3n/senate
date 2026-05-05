@@ -1,231 +1,143 @@
 # Senate
 
-> **Multi-model orchestration CLI** - Uses Claude Opus as the orchestrator, Vibe (Mistral) for execution, with optional advisor consultation from available CLIs.
+Multi-model orchestration CLI that wraps claude, vibe, and gemini, consults them in parallel on a prompt, then synthesizes their answers into a structured CONSENSUS / DISAGREEMENTS / OUTLIERS / RECOMMENDATION report. Inspired by https://council.armstr.ng/. Uses subscriptions you already pay for — senate handles no API keys itself.
 
-## 🎯 Project Scope
+## Install
 
-**Senate** is a CLI tool that intelligently coordinates multiple AI models to solve development tasks:
-
-- **Claude Opus** acts as the **orchestrator** - analyzes tasks and decides the workflow
-- **Vibe (Mistral Pro)** handles **execution** - code generation, fixes, implementation
-- **Optional advisors** (Claude, Vibe, Gemini, Codex) provide **second opinions** when needed
-
-**Key Design Principle:** Use existing CLI subscriptions (no direct API costs). All integrations wrap authenticated CLIs.
-
-## ⚡ Features
-
-- **Smart Orchestration:** Opus decides whether to consult advisors, execute, or both
-- **CLI-only:** Uses `claude`, `vibe`, `gemini`, `codex` CLIs - no API keys needed
-- **Parallel Consultation:** Advisors run in parallel for fast feedback
-- **Flexible Modes:** Consult-only, execute-only, or full workflow
-- **Graceful Degradation:** Skips unavailable/unauthenticated engines
-
-## 📦 Installation
+Node >= 18
 
 ```bash
-# Clone or navigate to the project
-git clone <repo-url> senate
-cd senate
-
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Link globally
-npm link
-
-# Or use npx (after publishing)
-npx senate "your task here"
+git clone https://github.com/tofuchick3n/senate && cd senate && npm install && npm run build && npm link
 ```
 
-## 🔑 Authenticate CLIs
+Bin name: `senate`. After `npm link`, `senate` is on PATH.
 
-Senate wraps existing CLIs - authenticate each one first:
+## Engines
 
-| CLI | Install | Authenticate |
-|-----|---------|--------------|
-| **Claude** | `npm install -g @anthropics/claude-cli` | `claude auth login` |
-| **Vibe** | `npm install -g @mistralai/vibe-cli` | `vibe --setup` |
-| **Gemini** | `npm install -g @google/gemini-cli` | Set `GEMINI_API_KEY` env var |
+Three wrapped CLIs. Each must be installed and authenticated independently:
 
-Verify all engines are authenticated:
-```bash
-senate --check-engines
-```
+| Engine | Install / Auth |
+|--------|----------------|
+| claude | Install per Anthropic docs; run `claude` to authenticate |
+| vibe | Run `vibe --setup` |
+| gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility |
 
-### Troubleshooting
+Verify with `senate --check-engines`. List configured engines with `senate --list-engines`.
 
-If engines show as unavailable, `senate --check-engines` will display the specific error for each.
-
-**Common issues:**
-- **Claude**: Usage limit reached → wait for monthly reset or upgrade plan
-- **Vibe**: API key not set → run `vibe --setup` again
-- **Gemini**: Missing `GEMINI_API_KEY` → set the environment variable
-- **Gemini**: Account not eligible for Code Assist → check your Google Cloud subscription
-- **Gemini**: 503 error → Google servers under high demand, try again later
-
-## 🚀 Usage
-
-### Basic Usage
+## Quickstart
 
 ```bash
-# Full workflow (orchestrate + consult + execute)
-senate "Implement a TypeScript CSV parser"
+# Basic prompt
+senate "Explain the factory pattern"
 
-# Consult advisors only (no execution)
-senate --consult-only "Review this architecture decision"
+# From stdin
+echo "Compare Rust and Zig" | senate
 
-# Execute only (no consultation)
-senate --execute-only "Fix the TypeScript error in this file"
+# File as prompt
+senate < spec.md
 
-# Skip consultation
-senate --no-consult "Simple question here"
-
-# Skip execution
-senate --no-execute "I just want opinions on this approach"
-
-# Custom advisors
-senate -a claude,vibe "Get opinions from Claude and Vibe"
+# Positional + stdin concatenated
+senate "context:" < details.md
 ```
 
-### Engine Management
+## Flags
+
+| Flag | Description |
+|------|-------------|
+| `[query]` | Positional. Optional if stdin is piped |
+| `--consult-only` | Only consult advisors. Implies execute=false. Bypasses orchestrator |
+| `--execute-only` | Only execute via vibe. Implies consult=false. Bypasses orchestrator |
+| `--no-consult` | Skip consult phase |
+| `--no-execute` | Skip execute phase |
+| `--smart` | Opt into orchestrator routing (Claude decides what to do) |
+| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,vibe` |
+| `--no-synthesis` | Skip synthesis step |
+| `--json` | Print final WorkflowResult as JSON blob to stdout |
+| `--json-stream` | Emit NDJSON events on stdout as they happen. Mutex with `--json` |
+| `--list-engines` | List configured engines + resolved bin paths |
+| `--check-engines` | Ping each engine to verify auth |
+| `-v, --verbose` | Show mode/advisors at startup |
+
+## Default workflow
+
+By default senate:
+
+1. Reads the prompt (positional arg, stdin, or both concatenated)
+2. Consults the default advisors (`claude` and `vibe`) in parallel
+3. Synthesizes their outputs into a structured report (consensus / disagreements / outliers / recommendation), with a lead summarizer falling back claude → vibe → gemini if the lead is unavailable
+4. Prints to stdout (human-friendly), with progress chatter on stderr
+
+There is no execution by default. To run the orchestrator (Claude decides whether to consult and/or execute via vibe), pass `--smart`.
+
+## JSON / NDJSON output
+
+`--json`: prints the full WorkflowResult (decision, advisorResults, synthesis, executionResult, totalDurationMs, cancelled) as one JSON blob on stdout.
+
+`--json-stream`: prints NDJSON events on stdout as the workflow progresses. Event types: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, plus a final `{type:'result', result:...}`.
+
+In machine modes the banner, spinner, and section headers are silenced. Errors are emitted as `{type:'error', message:'...'}` on stdout.
+
+Useful:
 
 ```bash
-# List available engines
-senate --list-engines
-
-# Check which engines are authenticated
-senate --check-engines
+senate "..." --json | jq .synthesis.structured.disagreements
 ```
 
-### Development
+## Bin overrides
+
+Set `SENATE_<NAME>_BIN` to override the binary path:
 
 ```bash
-# Run in development mode (auto-reload)
-npm run dev -- "your task"
-
-# Build for production
-npm run build
-
-# Run directly without build
-npm run start -- "your task"
+SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."
 ```
 
-## 🏗️ Architecture
+`--list-engines` and `--check-engines` annotate engines using overrides.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        SENATE CLI                               │
-├─────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   │
-│  │   Claude     │    │    Vibe       │    │   Advisors   │   │
-│  │   (Opus)     │    │   (Mistral)   │    │  (Optional)   │   │
-│  │ Orchestrator │    │  Executor     │    │ Consultation │   │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘   │
-│         │                   │                   │            │
-│         │ Decision          │                   │ Opinions   │
-│         ▼                   ▼                   ▼            │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │                    Workflow Engine                       │  │
-│  │  1. Analyze task with Opus                            │  │
-│  │  2. Consult advisors (parallel) if needed              │  │
-│  │  3. Execute with Vibe if needed                       │  │
-│  │  4. Synthesize and display results                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                                                                  │
-└─────────────────────────────────────────────────────────────┘
+## Cancellation (Ctrl-C)
+
+First Ctrl-C: cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace, kills the whole subprocess group), prints whatever finished, exits 130.
+
+Second Ctrl-C: immediate exit.
+
+## Synthesis output
+
+The synthesizer returns a structured object:
+
+```ts
+{
+  consensus: string[],
+  disagreements: [{ topic: string, positions: [{ engine: string, stance: string }] }],
+  outliers: [{ engine: string, note: string }],
+  recommendation: string
+}
 ```
 
-## 📁 Project Structure
+Exposed on `WorkflowResult.synthesis.structured` for `--json` consumers. Human view renders this deterministically. If the model returns malformed JSON, falls back to the raw output.
 
-```
-senate/
-├── src/
-│   ├── cli.ts              # Commander CLI interface
-│   ├── engines.ts          # CLI engine wrappers (claude, vibe, gemini, codex)
-│   ├── orchestrator.ts     # Opus decision logic
-│   └── workflow.ts         # Main workflow execution
-├── dist/                   # Compiled output (generated)
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+## Project layout
 
-## 🔧 Engine Configuration
+| File | Purpose |
+|------|---------|
+| `src/cli.ts` | Commander entry, flag parsing, mode determination, output dispatch |
+| `src/workflow.ts` | `runWorkflow`, `WorkflowResult`, `WorkflowEvent`, `formatWorkflowResult` |
+| `src/orchestrator.ts` | Claude routing decision (only used with `--smart`) |
+| `src/engines.ts` | `runEngine` (spawn + auth detection + cancel), `checkEngines` |
+| `src/synthesis.ts` | Lead-summarizer fallback, JSON parsing, prose rendering |
+| `src/registry.ts` | Single source of truth for engine config |
+| `src/ui.ts` | Banner, spinner, section helpers |
+| `src/__tests__/` | Node:test unit tests |
+| `docs/` | Architecture, usage, engines, roadmap |
+| `CHANGELOG.md` | Keep a Changelog format |
 
-Engines are configured in `src/engines.ts`. Each engine has:
+## Scripts
 
-- **Binary name:** The CLI command to spawn
-- **Arguments:** CLI-specific flags for safe, read-only operation
-- **Output parser:** Extracts clean text from CLI output
-- **Auth check:** Detects if authentication is missing
+| Script | Description |
+|--------|-------------|
+| `npm run build` | tsc to dist/ |
+| `npm test` | Runs node:test on compiled dist/__tests__ |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run dev -- "..."` | tsx watch mode |
 
-Currently supported:
-- `claude` - Claude CLI (Opus via Max plan)
-- `vibe` - Mistral Vibe CLI (Pro subscription)
-- `gemini` - Google Gemini CLI
-- `codex` - OpenAI Codex CLI
-
-## 🎛️ Workflow Logic
-
-1. **Orchestration Phase:**
-   - Opus (via `claude` CLI) analyzes the task
-   - Decides: consult advisors? execute? both?
-   - Returns a decision with reasoning
-
-2. **Consultation Phase (parallel):**
-   - Selected advisors process the task simultaneously
-   - Results are collected and filtered by success
-
-3. **Execution Phase:**
-   - Vibe CLI handles code generation and implementation
-   - Runs only if orchestrator approves
-
-4. **Result Formatting:**
-   - Execution results displayed first
-   - Advisor opinions grouped separately
-   - Clear visual separation with emojis
-
-## 🛡️ Safety & Cost Control
-
-- **CLI-only:** No direct API calls = no unexpected costs
-- **Read-only defaults:** Engines configured for safe operation
-- **Subscription-based:** Uses your existing authenticated CLIs
-- **Graceful failure:** Skips unavailable engines without crashing
-
-## 📝 Decision Logic
-
-The orchestrator (Opus) uses these heuristics:
-
-| Task Type | Consult Advisors | Execute with Vibe |
-|-----------|-----------------|------------------|
-| "Implement X" | Maybe | ✅ Yes |
-| "Fix Y" | Maybe | ✅ Yes |
-| "Review Z" | ✅ Yes | ❌ No |
-| "Compare A and B" | ✅ Yes | ❌ No |
-| "Explain C" | ✅ Yes | ❌ No |
-| "Simple question" | ❌ No | ❌ No |
-
-## 🔄 Future Enhancements
-
-- [ ] Synthesis of advisor opinions into unified response
-- [ ] Conversation mode for multi-turn tasks
-- [ ] Project context awareness (read files from cwd)
-- [ ] Custom prompts per engine
-- [ ] Timeout configuration per engine
-- [ ] JSON output mode for automation
-- [ ] Streaming output for long-running tasks
-- [ ] History/logging of past sessions
-
-## 🤝 Related Projects
-
-- [council](https://github.com/seeARMS/council) - Inspiration for multi-model CLI wrapping
-- [vibe](https://github.com/mistralai/vibe) - Mistral's CLI agent
-- [claude](https://github.com/anthropics/claude-cli) - Anthropic's CLI agent
-
-## 📄 License
+## License
 
 MIT

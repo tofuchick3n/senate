@@ -71,7 +71,8 @@ ${sections}
 `;
 }
 
-function extractJson(text: string): string {
+/** Exported for tests. Best-effort JSON extraction from a model response. */
+export function extractJson(text: string): string {
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) return fence[1].trim();
   const start = text.indexOf('{');
@@ -80,7 +81,8 @@ function extractJson(text: string): string {
   return text.trim();
 }
 
-function parseStructured(raw: string): SynthesisStructured | null {
+/** Exported for tests. Parses a model response into the structured schema, or null on failure. */
+export function parseStructured(raw: string): SynthesisStructured | null {
   try {
     const obj = JSON.parse(extractJson(raw));
     if (!obj || typeof obj !== 'object') return null;

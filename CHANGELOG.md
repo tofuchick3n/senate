@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Test suite (`node:test`, zero deps): unit tests for the registry (`resolveBin`, default advisors, synthesis priority, per-engine auth patterns, regression test for the gemini→claude cross-contamination bug) and synthesis (`extractJson`, `parseStructured`, `renderSynthesis`). Wired into CI via `npm test` on Node 18 + 20.
+
+## [0.2.0] - 2026-05-06
+
+### Added
 - Parallel advisor execution via `Promise.allSettled` (`workflow.ts`)
 - Synthesis step with structured CONSENSUS / DISAGREEMENTS / OUTLIERS / RECOMMENDATION prompt; lead summarizer falls back from `claude` → `vibe` → `gemini`
 - `--no-synthesis` flag

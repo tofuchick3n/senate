@@ -35,9 +35,9 @@ export type EngineEntry = {
 
 /**
  * Resolves the binary path for an engine: env override (SENATE_<NAME>_BIN) or default name.
- * Returns [resolvedBin, isOverridden].
+ * Returns [resolvedBin, isOverridden]. Exported for tests.
  */
-function resolveBin(name: string, defaultBinName: string): [string, boolean] {
+export function resolveBin(name: string, defaultBinName: string): [string, boolean] {
   const envKey = `SENATE_${name.toUpperCase()}_BIN`;
   const override = process.env[envKey];
   if (override && override.trim()) return [override.trim(), true];
