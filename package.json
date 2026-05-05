@@ -11,9 +11,9 @@
     "start": "tsx src/cli.ts",
     "dev": "tsx watch src/cli.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsc && node --test dist/__tests__/*.test.js",
+    "test": "tsc && node --test 'dist/__tests__/*.test.js'",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build && npm run typecheck && npm test"
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "ai",
