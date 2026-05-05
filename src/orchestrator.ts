@@ -38,7 +38,7 @@ export async function getDecision(prompt: string): Promise<Decision> {
     Task: ${prompt}
   `;
 
-  const result = await runEngine('claude', decisionPrompt, 15000, false);
+  const result = await runEngine('claude', decisionPrompt, { inactivityMs: 15000, stream: false });
   
   if (result.status !== 'ok') {
     console.log(`[Orchestrator] Falling back to defaults (Claude error: ${result.error})`);
