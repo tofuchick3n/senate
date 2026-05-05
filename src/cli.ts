@@ -3,7 +3,7 @@
 import { program } from 'commander';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
-import { getDefaultAdvisors, listEngineEntries } from './registry.js';
+import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
 import { printBanner } from './ui.js';
 
 async function readStdin(): Promise<string> {
@@ -51,7 +51,6 @@ program
     if (options.checkEngines) {
       console.log('Checking engine availability...');
       const results = await checkEngines();
-      const entriesByName = Object.fromEntries(listEngineEntries().map(e => [e.name, e]));
       const available = Object.entries(results)
         .filter(([_, r]) => r.status === 'ok')
         .map(([name]) => name);
@@ -63,7 +62,7 @@ program
       if (unavailable.length > 0) {
         console.log('\nUnavailable engines:');
         for (const { name, status, error } of unavailable) {
-          const e = entriesByName[name];
+          const e = getEngineConfig(name);
           const overrideNote = e?.binOverridden ? ` [bin=${e.bin}, via SENATE_${name.toUpperCase()}_BIN]` : '';
           console.log(`  ${name}: ${status}${error ? ` (${error})` : ''}${overrideNote}`);
         }

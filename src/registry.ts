@@ -27,6 +27,8 @@ export type EngineEntry = {
   inSynthesisPriority: boolean;
   /** True if this engine is in the default `--advisors` list. */
   inDefaultAdvisors: boolean;
+  /** Inactivity timeout used by `senate --check-engines` for this engine. Defaults vary because gemini's CLI is slow to cold-start (skill loading). */
+  healthCheckTimeoutMs: number;
   /** Optional extra env vars merged into the spawned process env. */
   env?: Record<string, string>;
 };
@@ -66,7 +68,8 @@ const REGISTRY: EngineEntry[] = [
       'not authenticated'
     ],
     inSynthesisPriority: true,
-    inDefaultAdvisors: true
+    inDefaultAdvisors: true,
+    healthCheckTimeoutMs: 15000
   }),
   entry({
     name: 'vibe',
@@ -84,7 +87,8 @@ const REGISTRY: EngineEntry[] = [
       'not authenticated'
     ],
     inSynthesisPriority: true,
-    inDefaultAdvisors: true
+    inDefaultAdvisors: true,
+    healthCheckTimeoutMs: 15000
   }),
   entry({
     name: 'gemini',
@@ -101,6 +105,7 @@ const REGISTRY: EngineEntry[] = [
     ],
     inSynthesisPriority: true,
     inDefaultAdvisors: false,
+    healthCheckTimeoutMs: 30000,
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
   })
 ];

@@ -3,6 +3,7 @@ import {
   getEngineConfig,
   getAuthPatterns,
   listEngineNames,
+  listEngineEntries,
   getSynthesisPriority
 } from './registry.js';
 
@@ -184,10 +185,11 @@ export function listEngines(): string[] {
 }
 
 export async function checkEngines(): Promise<Record<string, EngineResult>> {
-  const names = listEngineNames();
-  // Use longer timeout for health checks: gemini needs more time due to skill loading
-  const checkTimeouts: Record<string, number> = { gemini: 30000, claude: 15000, vibe: 15000 };
-  const promises = names.map(name => runEngine(name, 'ping', { inactivityMs: checkTimeouts[name] || 15000, stream: false }).then(result => ({ name, result })));
+  // Per-engine health-check timeout comes from the registry (e.g. gemini gets longer due to skill loading).
+  const promises = listEngineEntries().map(e =>
+    runEngine(e.name, 'ping', { inactivityMs: e.healthCheckTimeoutMs, stream: false })
+      .then(result => ({ name: e.name, result }))
+  );
   const results: Record<string, EngineResult> = {};
   for (const { name, result } of await Promise.all(promises)) {
     results[name] = result;
