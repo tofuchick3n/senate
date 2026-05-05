@@ -18,6 +18,7 @@ program
   
   // Advisor selection
   .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', 'claude,vibe')
+  .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
   
   // Utility
   .option('--list-engines', 'List available engines and exit')
@@ -67,7 +68,8 @@ program
     const mode = {
       consult,
       execute,
-      advisors: options.advisors?.split(',') || ['claude', 'vibe', 'gemini']
+      advisors: options.advisors?.split(',') || ['claude', 'vibe', 'gemini'],
+      synthesize: options.synthesis !== false
     };
 
     if (options.verbose) {
