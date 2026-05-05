@@ -15,7 +15,7 @@ async function readStdin(): Promise<string> {
 program
   .name('senate')
   .description('Multi-model orchestration CLI — consult claude, vibe, gemini in parallel')
-  .version('0.1.0')
+  .version('0.2.0')
   .argument('[query]', 'Task or question to process. If omitted and stdin is piped, stdin is used.')
 
   // Mode flags

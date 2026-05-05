@@ -1,7 +1,7 @@
 {
   "name": "senate",
-  "version": "0.1.0",
-  "description": "Multi-model orchestration CLI - Uses Claude Opus as orchestrator, Vibe for execution, with optional advisor consultation",
+  "version": "0.2.0",
+  "description": "Multi-model orchestration CLI — consult claude, vibe, gemini in parallel and synthesize their answers",
   "type": "module",
   "bin": {
     "senate": "./dist/cli.js"
@@ -11,8 +11,9 @@
     "start": "tsx src/cli.ts",
     "dev": "tsx watch src/cli.ts",
     "typecheck": "tsc --noEmit",
+    "test": "tsc && node --test dist/__tests__/*.test.js",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build && npm run typecheck"
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "ai",
