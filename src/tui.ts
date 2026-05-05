@@ -46,7 +46,7 @@ type ExecState = {
 export type TuiHandle = {
   /** Wire this into runWorkflow's `onEvent`. */
   onEvent: (e: WorkflowEvent) => void;
-  /** Stops the timer, clears the live region, prints a final static frame. */
+  /** Stops the timer and clears the live region (so cli.ts's final formatter is the sole post-completion output). */
   stop: (result?: WorkflowResult) => void;
 };
 
@@ -187,11 +187,8 @@ export function startTui(): TuiHandle {
 
   function stop(_result?: WorkflowResult) {
     clearInterval(timer);
-    // Render a final static frame, then "commit" it (so it scrolls away as normal output)
-    // and clear the live region. log-update.done() persists current content; we instead
-    // render a final frame and then clear so the formatted result printed by cli.ts isn't
-    // visually duplicated.
-    render(build());
+    // Clear the live region so cli.ts's final formatter is the sole post-completion output
+    // (otherwise the dashboard's last frame would be visually duplicated by the result block).
     render.clear();
     render.done();
   }
