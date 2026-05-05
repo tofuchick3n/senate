@@ -5,6 +5,7 @@ import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEv
 import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
 import { printBanner } from './ui.js';
+import { startTui } from './tui.js';
 import {
   TranscriptWriter,
   listSessions,
@@ -38,6 +39,7 @@ program
   // Output modes
   .option('--json', 'Print final result as a single JSON blob to stdout')
   .option('--json-stream', 'Print NDJSON events to stdout as they happen')
+  .option('--no-tui', 'Disable the live dashboard (fallback to plain settle-line output)')
 
   // Transcripts (#12)
   .option('--no-transcript', 'Do not persist this session to ~/.senate/sessions/')
@@ -146,6 +148,12 @@ program
     const streamMode = Boolean(options.jsonStream);
     const machineMode = jsonMode || streamMode;
 
+    // TUI is on by default in human + TTY mode. --no-tui disables it. Machine modes always disable.
+    const tuiEnabled = options.tui !== false && !machineMode && process.stderr.isTTY;
+    const tui = tuiEnabled ? startTui() : null;
+    // When TUI is on we want the workflow.ts settle-line chatter silenced — the dashboard replaces it.
+    const workflowQuiet = machineMode || tuiEnabled;
+
     // Transcript writer (best-effort; commander's --no-transcript flips options.transcript false).
     const wantTranscript = options.transcript !== false;
     const transcriptMode = {
@@ -159,6 +167,7 @@ program
 
     const onEvent = (e: WorkflowEvent) => {
       if (streamMode) process.stdout.write(JSON.stringify(e) + '\n');
+      tui?.onEvent(e);
       transcript?.appendEvent(e);
     };
 
@@ -183,13 +192,14 @@ program
       advisors: options.advisors.split(',').map((s: string) => s.trim()).filter(Boolean),
       synthesize: options.synthesis !== false,
       smart: Boolean(options.smart),
-      // In machine modes the user expects clean stdout, so silence the human progress chatter on stderr too.
-      quiet: machineMode,
+      // Silence workflow.ts chatter when in machine modes (clean stdout) or when the TUI is showing the same info.
+      quiet: workflowQuiet,
       onEvent,
       signal: controller.signal
     };
 
-    if (!machineMode) printBanner();
+    // Banner is for the static fallback path. The TUI has its own header.
+    if (!machineMode && !tuiEnabled) printBanner();
 
     if (options.verbose && !machineMode) {
       console.error(`[verbose] consult=${mode.consult} execute=${mode.execute} smart=${mode.smart}`);
@@ -198,6 +208,7 @@ program
 
     try {
       const result: WorkflowResult = await runWorkflow(query, mode);
+      tui?.stop(result);
       transcript?.end(result);
       if (streamMode) {
         process.stdout.write(JSON.stringify({ type: 'result', result }) + '\n');
@@ -212,6 +223,7 @@ program
         process.exit(130);
       }
     } catch (error: any) {
+      tui?.stop();
       if (machineMode) {
         process.stdout.write(JSON.stringify({ type: 'error', message: error.message }) + '\n');
       } else {
