@@ -38,7 +38,7 @@
 
 8. **First-class disagreement detection** — Synthesizer returns structured JSON with consensus, disagreements (topic + positions per engine), and outliers.
 
-9. **Engine config surface** — Support env overrides (SENATE_*_BIN) and per-engine flags via `~/.senate/config.json`.
+9. **Engine config surface** — Support env overrides (SENATE_*_BIN) and per-engine flags via `~/.senate/config.json`. Also the structural fix for engine-list duplication: today `ENGINE_CONFIGS`, the cli default advisors string, the auth-error pattern list, and `SYNTHESIS_PRIORITY` are independent touchpoints. A single config-driven engine registry collapses them.
 
 10. **Cost / usage awareness** — Display per-engine wall-clock time and token counts in the footer.
 

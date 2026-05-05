@@ -68,7 +68,7 @@ program
     const mode = {
       consult,
       execute,
-      advisors: options.advisors?.split(',') || ['claude', 'vibe', 'gemini'],
+      advisors: options.advisors.split(','),
       synthesize: options.synthesis !== false
     };
 

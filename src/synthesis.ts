@@ -1,12 +1,10 @@
-import { runEngine, type EngineResult } from './engines.js';
+import { runEngine, SYNTHESIS_PRIORITY, type EngineResult } from './engines.js';
 
 export type SynthesisResult = {
   engine: string;
   output: string;
   durationMs: number;
 };
-
-const LEAD_ORDER = ['claude', 'vibe', 'gemini'];
 
 function buildSynthesisPrompt(originalPrompt: string, advisors: EngineResult[]): string {
   const present = advisors.map(a => a.name.toUpperCase());
@@ -56,8 +54,8 @@ export async function synthesize(
   const synthPrompt = buildSynthesisPrompt(originalPrompt, successful);
 
   const order = preferredLead
-    ? [preferredLead, ...LEAD_ORDER.filter(n => n !== preferredLead)]
-    : LEAD_ORDER;
+    ? [preferredLead, ...SYNTHESIS_PRIORITY.filter(n => n !== preferredLead)]
+    : [...SYNTHESIS_PRIORITY];
 
   for (const lead of order) {
     const start = Date.now();
