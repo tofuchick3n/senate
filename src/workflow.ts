@@ -233,7 +233,7 @@ export function formatWorkflowResult(result: WorkflowResult): string {
       const cost = u.costUsd != null ? `  $${u.costUsd.toFixed(4)}` : '';
       usagePart = tokens ? `  ${tokens}${cost}` : cost;
     }
-    lines.push(`  ${r.name.padEnd(8)} ${elapsed.padStart(7)}${usagePart}`);
+    lines.push(`  ${r.name.padEnd(20)} ${elapsed.padStart(7)}${usagePart}`);
   }
   if (result.synthesis) {
     lines.push(`  ${('synthesis (' + result.synthesis.engine + ')').padEnd(20)} ${formatElapsed(result.synthesis.durationMs).padStart(7)}`);
