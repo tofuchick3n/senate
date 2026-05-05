@@ -9,12 +9,15 @@ export type SynthesisResult = {
 const LEAD_ORDER = ['claude', 'vibe', 'gemini'];
 
 function buildSynthesisPrompt(originalPrompt: string, advisors: EngineResult[]): string {
+  const present = advisors.map(a => a.name.toUpperCase());
   const sections = advisors
-    .filter(a => a.status === 'ok' && a.output.trim())
     .map(a => `=== ${a.name.toUpperCase()} ===\n${a.output.trim()}`)
     .join('\n\n');
 
-  return `You are synthesizing responses from multiple AI advisors who answered the same task.
+  return `You are synthesizing responses from ${present.length} AI advisors who answered the same task.
+
+The advisors who responded are: ${present.join(', ')}.
+ONLY refer to these advisors. Do NOT mention any other advisor names. Do NOT speculate about what an absent advisor would have said.
 
 Produce a structured synthesis with these sections (use these exact headers):
 
@@ -25,12 +28,12 @@ Points all or most advisors agreed on.
 Where advisors differ. For each disagreement, name which advisor took which stance.
 
 ## OUTLIERS
-Any advisor that took an unusual or contradictory position.
+Any advisor that took an unusual or contradictory position. Write "None." if there are none.
 
 ## RECOMMENDATION
 Your judgment given the spread of opinions.
 
-Be concise. Quote advisors by name (CLAUDE, VIBE, GEMINI) when attributing positions. Do not invent agreement that isn't there — if they truly diverge, say so.
+Be concise. Quote advisors by name (${present.join(', ')}) when attributing positions. Do not invent agreement that isn't there — if they truly diverge, say so.
 
 ---
 ORIGINAL TASK:
