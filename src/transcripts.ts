@@ -137,13 +137,19 @@ export function loadSession(path: string): {
 export function listSessions(dir: string = DEFAULT_SESSIONS_DIR, limit: number = 20): TranscriptSummary[] {
   let files: string[];
   try {
-    files = readdirSync(dir).filter(f => f.endsWith('.jsonl'));
+    // Filenames are ISO-8601-derived + per-process counter — lexicographic sort = chronological.
+    // Sort newest-first so we can stop reading once the limit is reached.
+    files = readdirSync(dir)
+      .filter(f => f.endsWith('.jsonl'))
+      .sort()
+      .reverse();
   } catch {
     return []; // dir doesn't exist yet — no sessions
   }
 
   const summaries: TranscriptSummary[] = [];
   for (const f of files) {
+    if (summaries.length >= limit) break;
     const path = join(dir, f);
     try {
       const { start, end } = loadSession(path);
@@ -162,11 +168,7 @@ export function listSessions(dir: string = DEFAULT_SESSIONS_DIR, limit: number =
       // skip
     }
   }
-
-  // Filename has the UTC timestamp (slash-safe), so file mtime is also a fine sort key,
-  // but the in-line `ts` from session_start is most authoritative.
-  summaries.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
-  return summaries.slice(0, limit);
+  return summaries;
 }
 
 /**
@@ -180,10 +182,9 @@ export function resolveSessionRef(ref: string, dir: string = DEFAULT_SESSIONS_DI
     const sessions = listSessions(dir, idx + 1);
     return sessions[idx]?.path ?? null;
   }
-  // Otherwise treat as a path. Verify it exists.
+  // Otherwise treat as a path. Verify it exists and is a regular file (not a directory).
   try {
-    statSync(ref);
-    return ref;
+    return statSync(ref).isFile() ? ref : null;
   } catch {
     return null;
   }

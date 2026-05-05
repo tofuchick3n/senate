@@ -151,7 +151,7 @@ program
     const transcriptMode = {
       consult: options.consultOnly ?? !options.noConsult,
       execute: options.executeOnly ?? !options.noExecute,
-      advisors: options.advisors.split(','),
+      advisors: options.advisors.split(',').map((s: string) => s.trim()).filter(Boolean),
       smart: Boolean(options.smart),
       synthesize: options.synthesis !== false
     };
@@ -180,7 +180,7 @@ program
     const mode = {
       consult,
       execute,
-      advisors: options.advisors.split(','),
+      advisors: options.advisors.split(',').map((s: string) => s.trim()).filter(Boolean),
       synthesize: options.synthesis !== false,
       smart: Boolean(options.smart),
       // In machine modes the user expects clean stdout, so silence the human progress chatter on stderr too.
