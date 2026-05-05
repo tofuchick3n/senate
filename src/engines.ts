@@ -8,6 +8,12 @@ export type EngineResult = {
   error?: string;
 };
 
+// Order matters: synthesis tries these as the lead summarizer in order, falling back if one
+// fails. Claude is first because it produces the most reliable structured output. To add a
+// new engine, register it in ENGINE_CONFIGS below and append it here only if you want it
+// eligible to lead synthesis.
+export const SYNTHESIS_PRIORITY = ['claude', 'vibe', 'gemini'] as const;
+
 const ENGINE_CONFIGS: Record<string, {
   bin: string;
   args: (prompt: string) => string[];

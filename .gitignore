@@ -4,3 +4,20 @@ dist/
 .env.local
 *.tsbuildinfo
 .DS_Store
+
+# Local senate state (sessions, transcripts) — see roadmap item 12
+.senate/
+*.senate.log
+
+# Editor / OS / tool junk
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.cache/
+
+# Local AI CLI artifacts that may appear from wrapped engines
+.claude/local/
+.vibe/
+.gemini/local/
