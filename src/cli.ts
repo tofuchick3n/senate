@@ -3,6 +3,7 @@
 import { program } from 'commander';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
+import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
 import { printBanner } from './ui.js';
 
 async function readStdin(): Promise<string> {
@@ -25,7 +26,7 @@ program
   .option('--smart', 'Let the orchestrator (Claude) decide whether to consult and/or execute')
 
   // Advisor selection
-  .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', 'claude,vibe')
+  .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', getDefaultAdvisors().join(','))
   .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
 
   // Output modes
@@ -39,7 +40,11 @@ program
 
   .action(async (queryArg: string | undefined, options: any) => {
     if (options.listEngines) {
-      console.log('Available engines:', listEngines().join(', '));
+      console.log('Configured engines:');
+      for (const e of listEngineEntries()) {
+        const overrideNote = e.binOverridden ? `  [SENATE_${e.name.toUpperCase()}_BIN]` : '';
+        console.log(`  ${e.name.padEnd(8)} bin=${e.bin}${overrideNote}`);
+      }
       return;
     }
 
@@ -57,7 +62,9 @@ program
       if (unavailable.length > 0) {
         console.log('\nUnavailable engines:');
         for (const { name, status, error } of unavailable) {
-          console.log(`  ${name}: ${status}${error ? ` (${error})` : ''}`);
+          const e = getEngineConfig(name);
+          const overrideNote = e?.binOverridden ? ` [bin=${e.bin}, via SENATE_${name.toUpperCase()}_BIN]` : '';
+          console.log(`  ${name}: ${status}${error ? ` (${error})` : ''}${overrideNote}`);
         }
       }
       return;

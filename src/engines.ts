@@ -1,4 +1,11 @@
 import { spawn } from 'node:child_process';
+import {
+  getEngineConfig,
+  getAuthPatterns,
+  listEngineNames,
+  listEngineEntries,
+  getSynthesisPriority
+} from './registry.js';
 
 export type EngineResult = {
   name: string;
@@ -14,37 +21,15 @@ export type RunEngineOptions = {
   signal?: AbortSignal;
 };
 
-// Order matters: synthesis tries these as the lead summarizer in order, falling back if one
-// fails. Claude is first because it produces the most reliable structured output. To add a
-// new engine, register it in ENGINE_CONFIGS below and append it here only if you want it
-// eligible to lead synthesis.
-export const SYNTHESIS_PRIORITY = ['claude', 'vibe', 'gemini'] as const;
-
-const ENGINE_CONFIGS: Record<string, {
-  bin: string;
-  args: (prompt: string) => string[];
-  parse: (stdout: string) => string;
-}> = {
-  claude: {
-    bin: 'claude',
-    args: (p) => ['-p', p, '--permission-mode', 'bypassPermissions'],
-    parse: (stdout) => stdout.trim()
-  },
-  vibe: {
-    bin: 'vibe',
-    args: (p) => ['-p', p, '--output', 'text'],
-    parse: (stdout) => stdout.trim()
-  },
-  gemini: {
-    bin: 'gemini',
-    args: (p) => ['-p', p, '--skip-trust', '--output-format', 'text'],
-    parse: (stdout) => stdout.trim()
-  }
-};
+/**
+ * Backward-compat re-export. New code should import from './registry.js'.
+ * Synthesis priority lives in the registry now (each entry has inSynthesisPriority + position).
+ */
+export const SYNTHESIS_PRIORITY = getSynthesisPriority();
 
 export async function runEngine(name: string, prompt: string, opts: RunEngineOptions = {}): Promise<EngineResult> {
   const { inactivityMs = 30000, stream = true, signal } = opts;
-  const config = ENGINE_CONFIGS[name];
+  const config = getEngineConfig(name);
   if (!config) return { name, status: 'missing', output: '', durationMs: 0 };
 
   // If already aborted before we even spawn, return immediately.
@@ -52,11 +37,7 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
     return { name, status: 'cancelled', output: '', durationMs: 0, error: 'Cancelled before start' };
   }
 
-  const env = { ...process.env };
-  // Set trust workspace for gemini to avoid directory trust prompts
-  if (name === 'gemini') {
-    env.GEMINI_CLI_TRUST_WORKSPACE = 'true';
-  }
+  const env = { ...process.env, ...(config.env ?? {}) };
 
   return new Promise((resolve) => {
     const start = Date.now();
@@ -144,23 +125,10 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
         });
       }
 
-      // Check for authentication errors in both stdout and stderr
-      // Be specific to avoid false positives (e.g., "Error authenticating" for eligibility issues)
-      const authErrorPatterns = [
-        'not logged in',
-        'please run /login',
-        'please run claude auth',
-        'please run vibe --setup',
-        'api key not found',
-        'api key not valid',
-        'api key not set',
-        'api key required',
-        'authentication failed',
-        'authentication required',
-        'not authenticated',
-        'must specify the gemini_api_key'
-      ];
-      const isAuthError = authErrorPatterns.some(pattern => 
+      // Per-engine auth-error patterns (registry-driven). Avoids cross-contamination —
+      // e.g. "must specify the gemini_api_key" should NOT classify a claude failure as auth.
+      const authPatterns = getAuthPatterns(name);
+      const isAuthError = authPatterns.some(pattern =>
         combinedOutput.toLowerCase().includes(pattern)
       );
 
@@ -213,14 +181,15 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
 }
 
 export function listEngines(): string[] {
-  return Object.keys(ENGINE_CONFIGS);
+  return listEngineNames();
 }
 
 export async function checkEngines(): Promise<Record<string, EngineResult>> {
-  const names = Object.keys(ENGINE_CONFIGS);
-  // Use longer timeout for health checks: gemini needs more time due to skill loading
-  const checkTimeouts: Record<string, number> = { gemini: 30000, claude: 15000, vibe: 15000 };
-  const promises = names.map(name => runEngine(name, 'ping', { inactivityMs: checkTimeouts[name] || 15000, stream: false }).then(result => ({ name, result })));
+  // Per-engine health-check timeout comes from the registry (e.g. gemini gets longer due to skill loading).
+  const promises = listEngineEntries().map(e =>
+    runEngine(e.name, 'ping', { inactivityMs: e.healthCheckTimeoutMs, stream: false })
+      .then(result => ({ name: e.name, result }))
+  );
   const results: Record<string, EngineResult> = {};
   for (const { name, result } of await Promise.all(promises)) {
     results[name] = result;
@@ -229,7 +198,7 @@ export async function checkEngines(): Promise<Record<string, EngineResult>> {
 }
 
 export function getAvailableEngines(): Promise<string[]> {
-  return checkEngines().then(results => 
+  return checkEngines().then(results =>
     Object.entries(results)
       .filter(([_, result]) => result.status === 'ok')
       .map(([name]) => name)

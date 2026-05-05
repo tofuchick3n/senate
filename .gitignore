@@ -17,7 +17,7 @@ dist/
 Thumbs.db
 .cache/
 
-# Local AI CLI artifacts that may appear from wrapped engines
-.claude/local/
+# Local AI CLI artifacts (Claude Code session state, vibe/gemini local dirs)
+.claude/
 .vibe/
 .gemini/local/

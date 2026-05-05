@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `cancelled: boolean` field on `WorkflowResult`; `(cancelled — partial)` indicator in the human report.
 - `signal?: AbortSignal` on `RunOptions` and `RunEngineOptions`; flows through advisor calls, the synthesis lead-summarizer call, and vibe execution.
 - Structured synthesis output. `SynthesisResult.structured` exposes `{ consensus: string[], disagreements: [{topic, positions:[{engine,stance}]}], outliers: [{engine,note}], recommendation }`. Synthesizer is now prompted for JSON; the prose `output` field is rendered from the structured form. When parse fails, falls back to the raw model output.
+- `src/registry.ts` — single source of truth for engine configuration. Each entry carries `bin`, `defaultBinName`, `args`, `parse`, `authPatterns`, `inSynthesisPriority`, `inDefaultAdvisors`, optional `env`. Replaces the four independent touchpoints (`ENGINE_CONFIGS`, `SYNTHESIS_PRIORITY`, default advisors string, global auth-pattern list) with one place to edit.
+- `SENATE_<NAME>_BIN` env-var bin overrides — e.g. `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude`. Resolved at module load. Surfaced in `--list-engines` and `--check-engines` output.
 
 ### Changed
 - `--consult-only` now implies skipping execution; `--execute-only` implies skipping consultation. Setting either flag bypasses the orchestrator round-trip.
@@ -32,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Progress chatter now goes to stderr; final result (human, JSON, or NDJSON) goes to stdout. Enables clean piping.
 - `runEngine` signature: now takes an options object `{ inactivityMs?, stream?, signal? }` instead of positional args. All callers updated.
 - Engines spawn detached (their own process group) so cancellation kills the whole subprocess tree, not just the wrapped binary.
+- Auth-error detection is now per-engine (registry-driven), no longer a single global pattern list. Avoids cross-contamination — e.g. the Gemini-only `must specify the gemini_api_key` string no longer accidentally classifies a Claude error as `unauthenticated`.
+- Default `--advisors` value is now derived from the registry (`getDefaultAdvisors().join(',')`) instead of a hardcoded string in `cli.ts`. Adding/removing an engine from the default list is a one-line registry edit.
+- `--list-engines` output now shows resolved bin paths and flags any engines using `SENATE_*_BIN` overrides.
 
 ### Fixed
 - Claude: `--permission-mode auto` (invalid value) → `bypassPermissions`

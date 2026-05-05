@@ -1,4 +1,5 @@
-import { runEngine, SYNTHESIS_PRIORITY, type EngineResult } from './engines.js';
+import { runEngine, type EngineResult } from './engines.js';
+import { getSynthesisPriority } from './registry.js';
 
 export type DisagreementPosition = {
   engine: string;
@@ -158,9 +159,10 @@ export async function synthesize(
 
   const synthPrompt = buildSynthesisPrompt(originalPrompt, successful);
 
+  const priority = getSynthesisPriority();
   const order = preferredLead
-    ? [preferredLead, ...SYNTHESIS_PRIORITY.filter(n => n !== preferredLead)]
-    : [...SYNTHESIS_PRIORITY];
+    ? [preferredLead, ...priority.filter(n => n !== preferredLead)]
+    : priority;
 
   for (const lead of order) {
     if (signal?.aborted) return null;
