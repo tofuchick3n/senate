@@ -5,6 +5,12 @@ import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEv
 import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
 import { printBanner } from './ui.js';
+import {
+  TranscriptWriter,
+  listSessions,
+  loadSession,
+  resolveSessionRef
+} from './transcripts.js';
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -33,6 +39,11 @@ program
   .option('--json', 'Print final result as a single JSON blob to stdout')
   .option('--json-stream', 'Print NDJSON events to stdout as they happen')
 
+  // Transcripts (#12)
+  .option('--no-transcript', 'Do not persist this session to ~/.senate/sessions/')
+  .option('--list-sessions [count]', 'List recent saved sessions and exit')
+  .option('--resume <ref>', 'Reprint a saved session by index (0=newest) or path')
+
   // Utility
   .option('--list-engines', 'List available engines and exit')
   .option('--check-engines', 'Check which engines are authenticated and exit')
@@ -45,6 +56,38 @@ program
         const overrideNote = e.binOverridden ? `  [SENATE_${e.name.toUpperCase()}_BIN]` : '';
         console.log(`  ${e.name.padEnd(8)} bin=${e.bin}${overrideNote}`);
       }
+      return;
+    }
+
+    if (options.listSessions !== undefined) {
+      const limit = typeof options.listSessions === 'string' ? parseInt(options.listSessions, 10) || 20 : 20;
+      const sessions = listSessions(undefined, limit);
+      if (sessions.length === 0) {
+        console.log('No sessions found in ~/.senate/sessions/');
+        return;
+      }
+      console.log(`Recent sessions (${sessions.length}):`);
+      sessions.forEach((s, i) => {
+        const flag = s.cancelled ? ' [cancelled]' : '';
+        console.log(`  ${String(i).padStart(2)}  ${s.ts}  ${s.advisors.join(',').padEnd(20)} ${s.promptPreview}${flag}`);
+      });
+      console.log(`\nReprint with: senate --resume <index> | senate --resume <path>`);
+      return;
+    }
+
+    if (options.resume) {
+      const path = resolveSessionRef(options.resume);
+      if (!path) {
+        console.error(`Error: no session matching "${options.resume}" (try --list-sessions)`);
+        process.exit(1);
+      }
+      const { end, start } = loadSession(path);
+      if (!end?.result) {
+        console.error(`Error: session at ${path} has no recorded result (likely aborted)`);
+        process.exit(1);
+      }
+      if (start) console.log(`# Resumed session ${start.ts}\n# Prompt: ${start.prompt}\n`);
+      console.log(formatWorkflowResult(end.result));
       return;
     }
 
@@ -103,9 +146,21 @@ program
     const streamMode = Boolean(options.jsonStream);
     const machineMode = jsonMode || streamMode;
 
-    const onEvent = streamMode
-      ? (e: WorkflowEvent) => process.stdout.write(JSON.stringify(e) + '\n')
-      : undefined;
+    // Transcript writer (best-effort; commander's --no-transcript flips options.transcript false).
+    const wantTranscript = options.transcript !== false;
+    const transcriptMode = {
+      consult: options.consultOnly ?? !options.noConsult,
+      execute: options.executeOnly ?? !options.noExecute,
+      advisors: options.advisors.split(','),
+      smart: Boolean(options.smart),
+      synthesize: options.synthesis !== false
+    };
+    const transcript = wantTranscript ? new TranscriptWriter(query, transcriptMode) : null;
+
+    const onEvent = (e: WorkflowEvent) => {
+      if (streamMode) process.stdout.write(JSON.stringify(e) + '\n');
+      transcript?.appendEvent(e);
+    };
 
     // Wire Ctrl-C: first press cancels gracefully (via AbortController) and lets the workflow
     // emit/print whatever has finished. A second press exits immediately with 130.
@@ -143,12 +198,14 @@ program
 
     try {
       const result: WorkflowResult = await runWorkflow(query, mode);
+      transcript?.end(result);
       if (streamMode) {
         process.stdout.write(JSON.stringify({ type: 'result', result }) + '\n');
       } else if (jsonMode) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       } else {
         console.log(formatWorkflowResult(result));
+        if (transcript) console.log(`(saved to ${transcript.path})`);
       }
       if (result.cancelled) {
         process.off('SIGINT', onSigint);

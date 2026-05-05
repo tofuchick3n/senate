@@ -7,7 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 ### Added
+- Persistent transcripts (#12). Each session is written to `~/.senate/sessions/<utc>-<seq>.jsonl` as JSONL: a `session_start` line, all `WorkflowEvent`s as they occur, and a final `session_end` line carrying the full `WorkflowResult`. Best-effort write — transcript IO failures never block the run.
+- `--no-transcript` flag — opts out of session persistence.
+- `--list-sessions [count]` — prints recent sessions (default 20) with timestamp, advisors, prompt preview, cancel marker.
+- `--resume <ref>` — reprints a saved session. `<ref>` is either an integer index into `--list-sessions` (0 = newest) or a literal file path.
+- `src/transcripts.ts` exports `TranscriptWriter`, `loadSession`, `listSessions`, `resolveSessionRef`.
 - Test suite (`node:test`, zero deps): unit tests for the registry (`resolveBin`, default advisors, synthesis priority, per-engine auth patterns, regression test for the gemini→claude cross-contamination bug) and synthesis (`extractJson`, `parseStructured`, `renderSynthesis`). Wired into CI via `npm test` on Node 18 + 20.
+- Transcript-module tests (writer round-trip, sort order, prompt preview truncation, junk-file resilience, ref resolution).
 
 ## [0.2.0] - 2026-05-06
 
