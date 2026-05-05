@@ -12,7 +12,7 @@
 | 6 | stdin support | TODO | medium |
 | 7 | Make orchestrator opt-in | TODO | medium |
 | 8 | First-class disagreement detection | TODO | medium |
-| 9 | Engine config surface | TODO | low |
+| 9 | Engine config surface | Done | - |
 | 10 | Cost / usage awareness | TODO | low |
 | 11 | Cancel + partial results | TODO | low |
 | 12 | Persistent transcripts | TODO | low |
@@ -38,7 +38,7 @@
 
 8. **First-class disagreement detection** — Synthesizer returns structured JSON with consensus, disagreements (topic + positions per engine), and outliers.
 
-9. **Engine config surface** — Support env overrides (SENATE_*_BIN) and per-engine flags via `~/.senate/config.json`. Also the structural fix for engine-list duplication: today `ENGINE_CONFIGS`, the cli default advisors string, the auth-error pattern list, and `SYNTHESIS_PRIORITY` are independent touchpoints. A single config-driven engine registry collapses them.
+9. **Engine config surface** — _Done._ `src/registry.ts` is now the single source of truth: bin/args/parse, per-engine auth patterns, synthesis priority, and default-advisors membership all live in one entry per engine. Bin paths can be overridden with `SENATE_<NAME>_BIN`. Per-engine flags via `~/.senate/config.json` was scoped out — defer until a real need surfaces.
 
 10. **Cost / usage awareness** — Display per-engine wall-clock time and token counts in the footer.
 
