@@ -1,31 +1,43 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
-import { runWorkflow, formatWorkflowResult, type WorkflowResult } from './workflow.js';
-import { listEngines, getAvailableEngines, checkEngines } from './engines.js';
+import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
+import { listEngines, checkEngines } from './engines.js';
+import { printBanner } from './ui.js';
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
 
 program
   .name('senate')
-  .description('Multi-model orchestration CLI - Uses Claude Opus as orchestrator, Vibe for execution')
+  .description('Multi-model orchestration CLI — consult claude, vibe, gemini in parallel')
   .version('0.1.0')
-  .argument('[query]', 'Task or question to process')
-  
+  .argument('[query]', 'Task or question to process. If omitted and stdin is piped, stdin is used.')
+
   // Mode flags
   .option('--consult-only', 'Only consult advisors, skip execution')
   .option('--execute-only', 'Only execute with Vibe, skip consultation')
   .option('--no-consult', 'Skip advisor consultation')
   .option('--no-execute', 'Skip Vibe execution')
-  
+  .option('--smart', 'Let the orchestrator (Claude) decide whether to consult and/or execute')
+
   // Advisor selection
   .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', 'claude,vibe')
   .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
-  
+
+  // Output modes
+  .option('--json', 'Print final result as a single JSON blob to stdout')
+  .option('--json-stream', 'Print NDJSON events to stdout as they happen')
+
   // Utility
   .option('--list-engines', 'List available engines and exit')
   .option('--check-engines', 'Check which engines are authenticated and exit')
   .option('-v, --verbose', 'Show verbose output')
-  
-  .action(async (query: string | undefined, options: any) => {
+
+  .action(async (queryArg: string | undefined, options: any) => {
     if (options.listEngines) {
       console.log('Available engines:', listEngines().join(', '));
       return;
@@ -40,7 +52,7 @@ program
       const unavailable = Object.entries(results)
         .filter(([_, r]) => r.status !== 'ok')
         .map(([name, r]) => ({ name, status: r.status, error: r.error }));
-      
+
       console.log('Authenticated:', available.length > 0 ? available.join(', ') : 'none');
       if (unavailable.length > 0) {
         console.log('\nUnavailable engines:');
@@ -51,9 +63,23 @@ program
       return;
     }
 
+    // Resolve query: positional arg, then stdin, then help.
+    let query = queryArg;
+    const stdinPiped = !process.stdin.isTTY;
+    if (stdinPiped) {
+      const stdinText = await readStdin();
+      if (stdinText) {
+        query = query ? `${query}\n\n${stdinText}` : stdinText;
+      }
+    }
     if (!query) {
       program.help();
       return;
+    }
+
+    if (options.json && options.jsonStream) {
+      console.error('Error: --json and --json-stream are mutually exclusive.');
+      process.exit(2);
     }
 
     // Determine mode from flags. --consult-only implies skip execute; --execute-only implies skip consult.
@@ -65,29 +91,54 @@ program
       : options.consultOnly ? false
       : options.noExecute ? false
       : undefined;
+
+    const jsonMode = Boolean(options.json);
+    const streamMode = Boolean(options.jsonStream);
+    const machineMode = jsonMode || streamMode;
+
+    const onEvent = streamMode
+      ? (e: WorkflowEvent) => process.stdout.write(JSON.stringify(e) + '\n')
+      : undefined;
+
     const mode = {
       consult,
       execute,
       advisors: options.advisors.split(','),
-      synthesize: options.synthesis !== false
+      synthesize: options.synthesis !== false,
+      smart: Boolean(options.smart),
+      // In machine modes the user expects clean stdout, so silence the human progress chatter on stderr too.
+      quiet: machineMode,
+      onEvent
     };
 
-    if (options.verbose) {
-      console.log(`[Verbose] Mode: consult=${mode.consult}, execute=${mode.execute}`);
-      console.log(`[Verbose] Advisors: ${mode.advisors.join(', ')}`);
+    if (!machineMode) printBanner();
+
+    if (options.verbose && !machineMode) {
+      console.error(`[verbose] consult=${mode.consult} execute=${mode.execute} smart=${mode.smart}`);
+      console.error(`[verbose] advisors=${mode.advisors.join(', ')}`);
     }
 
     try {
       const result: WorkflowResult = await runWorkflow(query, mode);
-      console.log(formatWorkflowResult(result));
+      if (streamMode) {
+        process.stdout.write(JSON.stringify({ type: 'result', result }) + '\n');
+      } else if (jsonMode) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      } else {
+        console.log(formatWorkflowResult(result));
+      }
     } catch (error: any) {
-      console.error('\n❌ Error:', error.message);
+      if (machineMode) {
+        process.stdout.write(JSON.stringify({ type: 'error', message: error.message }) + '\n');
+      } else {
+        console.error('\n❌ Error:', error.message);
+      }
       process.exit(1);
     }
   });
 
-// Handle empty command
-if (!process.argv.slice(2).length) {
+// Handle empty command (no args and stdin is a TTY — i.e. nothing piped).
+if (!process.argv.slice(2).length && process.stdin.isTTY) {
   program.help();
 }
 
