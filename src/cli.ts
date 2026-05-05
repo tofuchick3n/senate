@@ -6,6 +6,7 @@ import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
 import { printBanner } from './ui.js';
 import { startTui } from './tui.js';
+import { startRepl, type Turn } from './repl.js';
 import {
   TranscriptWriter,
   listSessions,
@@ -40,6 +41,7 @@ program
   .option('--json', 'Print final result as a single JSON blob to stdout')
   .option('--json-stream', 'Print NDJSON events to stdout as they happen')
   .option('--no-tui', 'Disable the live dashboard (fallback to plain settle-line output)')
+  .option('--repl', 'After the first result, drop into a conversation REPL with prior turns as context')
 
   // Transcripts (#12)
   .option('--no-transcript', 'Do not persist this session to ~/.senate/sessions/')
@@ -218,6 +220,35 @@ program
         console.log(formatWorkflowResult(result));
         if (transcript) console.log(`(saved to ${transcript.path})`);
       }
+
+      // REPL: only in human + interactive mode. Skip if cancelled, machine modes, or stdin already piped (one-shot).
+      const replEnabled = options.repl && !machineMode && !stdinPiped && !result.cancelled && process.stdin.isTTY;
+      if (replEnabled) {
+        process.stderr.write(`\n[repl] Enter follow-up questions (prior turns kept as context). /exit to quit.\n`);
+        await startRepl(
+          { prompt: query, result },
+          {
+            runTurn: async (enrichedPrompt: string, _displayPrompt: string) => {
+              // Each REPL turn gets its own TUI, transcript, and cancel-aware execution.
+              const turnTui = (options.tui !== false && process.stderr.isTTY) ? startTui() : null;
+              const turnTranscript = wantTranscript ? new (await import('./transcripts.js')).TranscriptWriter(enrichedPrompt, transcriptMode) : null;
+              const turnOnEvent = (e: WorkflowEvent) => {
+                turnTui?.onEvent(e);
+                turnTranscript?.appendEvent(e);
+              };
+              const turnResult = await runWorkflow(enrichedPrompt, { ...mode, onEvent: turnOnEvent });
+              turnTui?.stop(turnResult);
+              turnTranscript?.end(turnResult);
+              return turnResult;
+            },
+            printResult: (r) => {
+              console.log(formatWorkflowResult(r));
+            }
+          },
+          () => controller.signal.aborted
+        );
+      }
+
       if (result.cancelled) {
         process.off('SIGINT', onSigint);
         process.exit(130);
