@@ -75,6 +75,13 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
     let inactivityTimer: NodeJS.Timeout;
     let killGraceTimer: NodeJS.Timeout | null = null;
 
+    // Capture spawn failures (ENOENT, EACCES, etc.). Without this listener Node throws an
+    // uncaught 'error' event when the binary is missing. Routing the message into stderr
+    // also lets the close handler's missing/auth pattern matcher classify it correctly.
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      stderr += `spawn ${name}: ${err.code || ''} ${err.message}`;
+    });
+
     const killGroup = (sig: NodeJS.Signals) => {
       // Negative pid signals the whole process group. Falls back to per-pid if pgid unavailable.
       if (child.pid) {
