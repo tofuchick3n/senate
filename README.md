@@ -40,6 +40,32 @@ npm link
 npx senate "your task here"
 ```
 
+## 🔑 Authenticate CLIs
+
+Senate wraps existing CLIs - authenticate each one first:
+
+| CLI | Install | Authenticate |
+|-----|---------|--------------|
+| **Claude** | `npm install -g @anthropics/claude-cli` | `claude auth login` |
+| **Vibe** | `npm install -g @mistralai/vibe-cli` | `vibe --setup` |
+| **Gemini** | `npm install -g @google/gemini-cli` | Set `GEMINI_API_KEY` env var |
+
+Verify all engines are authenticated:
+```bash
+senate --check-engines
+```
+
+### Troubleshooting
+
+If engines show as unavailable, `senate --check-engines` will display the specific error for each.
+
+**Common issues:**
+- **Claude**: Usage limit reached → wait for monthly reset or upgrade plan
+- **Vibe**: API key not set → run `vibe --setup` again
+- **Gemini**: Missing `GEMINI_API_KEY` → set the environment variable
+- **Gemini**: Account not eligible for Code Assist → check your Google Cloud subscription
+- **Gemini**: 503 error → Google servers under high demand, try again later
+
 ## 🚀 Usage
 
 ### Basic Usage

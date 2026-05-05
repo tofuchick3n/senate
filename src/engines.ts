@@ -12,73 +12,135 @@ const ENGINE_CONFIGS: Record<string, {
   bin: string;
   args: (prompt: string) => string[];
   parse: (stdout: string) => string;
-  authCheck?: (stderr: string) => boolean;
 }> = {
   claude: {
     bin: 'claude',
-    args: (p) => ['--bare', '-p', '--permission-mode', 'plan', '--output-format', 'stream-json'],
-    parse: (stdout) => {
-      const lines = stdout.split('\n');
-      const textParts = lines
-        .map(l => {
-          try { return JSON.parse(l)?.message?.content?.[0]?.text; } catch { return null; }
-        })
-        .filter(Boolean);
-      return textParts.join('');
-    }
+    args: (p) => ['-p', p, '--permission-mode', 'bypassPermissions'],
+    parse: (stdout) => stdout.trim()
   },
   vibe: {
     bin: 'vibe',
-    args: (p) => ['--no-interactive', '--task', p, '--output-format', 'text'],
-    parse: (stdout) => stdout.trim(),
-    authCheck: (stderr) => !stderr.includes('API key not found')
+    args: (p) => ['-p', p, '--output', 'text'],
+    parse: (stdout) => stdout.trim()
   },
   gemini: {
     bin: 'gemini',
-    args: (p) => ['-p', p, '--approval-mode', 'plan', '--output-format', 'json'],
-    parse: (stdout) => {
-      try { return JSON.parse(stdout)?.response; } catch { return stdout; }
-    },
-    authCheck: (stderr) => !stderr.includes('authentication') && !stderr.includes('login')
+    args: (p) => ['-p', p, '--skip-trust', '--output-format', 'text'],
+    parse: (stdout) => stdout.trim()
   }
 };
 
-export async function runEngine(name: string, prompt: string): Promise<EngineResult> {
+export async function runEngine(name: string, prompt: string, inactivityMs: number = 30000, stream: boolean = true): Promise<EngineResult> {
   const config = ENGINE_CONFIGS[name];
   if (!config) return { name, status: 'missing', output: '', durationMs: 0 };
+
+  const env = { ...process.env };
+  // Set trust workspace for gemini to avoid directory trust prompts
+  if (name === 'gemini') {
+    env.GEMINI_CLI_TRUST_WORKSPACE = 'true';
+  }
 
   return new Promise((resolve) => {
     const start = Date.now();
     const child = spawn(config.bin, config.args(prompt), {
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env
     });
 
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    let inactivityTimer: NodeJS.Timeout;
 
-    child.stdout.on('data', (d) => stdout += d);
-    child.stderr.on('data', (d) => stderr += d);
+    const resetInactivityTimer = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, inactivityMs);
+    };
+
+    // Initial inactivity timer
+    resetInactivityTimer();
+
+    // Also keep a max timeout as safety (5 minutes)
+    const maxTimeout = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, 300000);
+
+    child.stdout.on('data', (d) => {
+      stdout += d;
+      if (stream) process.stdout.write(`     ${d}`);
+      resetInactivityTimer();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d;
+      if (stream) process.stderr.write(`     ${d}`);
+      resetInactivityTimer();
+    });
 
     child.on('close', (code) => {
+      clearTimeout(inactivityTimer);
+      clearTimeout(maxTimeout);
       const durationMs = Date.now() - start;
+      const combinedOutput = stdout + stderr;
 
-      if (config.authCheck && !config.authCheck(stderr)) {
+      // Check for authentication errors in both stdout and stderr
+      // Be specific to avoid false positives (e.g., "Error authenticating" for eligibility issues)
+      const authErrorPatterns = [
+        'not logged in',
+        'please run /login',
+        'please run claude auth',
+        'please run vibe --setup',
+        'api key not found',
+        'api key not valid',
+        'api key not set',
+        'api key required',
+        'authentication failed',
+        'authentication required',
+        'not authenticated',
+        'must specify the gemini_api_key'
+      ];
+      const isAuthError = authErrorPatterns.some(pattern => 
+        combinedOutput.toLowerCase().includes(pattern)
+      );
+
+      if (timedOut) {
         return resolve({
           name,
-          status: 'unauthenticated',
+          status: 'error',
           output: '',
           durationMs,
-          error: 'Authentication required'
+          error: 'Timeout'
         });
       }
 
-      if (code !== 0 || stderr.includes('not found') || stderr.includes('ENOENT')) {
+      if (code !== 0) {
+        if (isAuthError) {
+          return resolve({
+            name,
+            status: 'unauthenticated',
+            output: '',
+            durationMs,
+            error: 'Authentication required'
+          });
+        }
+        if (combinedOutput.includes('not found') || combinedOutput.includes('ENOENT')) {
+          return resolve({
+            name,
+            status: 'missing',
+            output: '',
+            durationMs,
+            error: 'Binary not found'
+          });
+        }
         return resolve({
           name,
-          status: stderr.includes('not found') || stderr.includes('ENOENT') ? 'missing' : 'error',
+          status: 'error',
           output: '',
           durationMs,
-          error: stderr.trim().split('\n').at(0) || 'Unknown error'
+          error: combinedOutput.trim().split('\n').at(0) || 'Unknown error'
         });
       }
 
@@ -96,11 +158,22 @@ export function listEngines(): string[] {
   return Object.keys(ENGINE_CONFIGS);
 }
 
+export async function checkEngines(): Promise<Record<string, EngineResult>> {
+  const names = Object.keys(ENGINE_CONFIGS);
+  // Use longer timeout for health checks: gemini needs more time due to skill loading
+  const checkTimeouts: Record<string, number> = { gemini: 30000, claude: 15000, vibe: 15000 };
+  const promises = names.map(name => runEngine(name, 'ping', checkTimeouts[name] || 15000, false).then(result => ({ name, result })));
+  const results: Record<string, EngineResult> = {};
+  for (const { name, result } of await Promise.all(promises)) {
+    results[name] = result;
+  }
+  return results;
+}
+
 export function getAvailableEngines(): Promise<string[]> {
-  return Promise.all(
-    Object.keys(ENGINE_CONFIGS).map(async (name) => {
-      const result = await runEngine(name, 'ping');
-      return result.status === 'ok' ? name : null;
-    })
-  ).then(results => results.filter(Boolean) as string[]);
+  return checkEngines().then(results => 
+    Object.entries(results)
+      .filter(([_, result]) => result.status === 'ok')
+      .map(([name]) => name)
+  );
 }

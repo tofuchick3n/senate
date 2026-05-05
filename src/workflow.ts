@@ -15,34 +15,43 @@ export async function runWorkflow(prompt: string, options: {
 } = {}): Promise<WorkflowResult> {
   const start = Date.now();
   
-  // Step 1: Get decision from Opus (via claude)
-  console.log('\n🎭 Orchestrator deciding...');
-  const decision = options.consult !== undefined && options.execute !== undefined
-    ? {
-        consultAdvisors: options.consult,
-        advisors: options.advisors || ['claude', 'vibe'],
-        executeWithVibe: options.execute,
-        explanation: options.consult ? 'User requested consultation' : 'User requested execution only'
-      }
-    : await getDecision(prompt);
+  // Step 1: Get decision. If user explicitly set either flag, skip the orchestrator entirely
+  // and use their choices (defaulting the unset side).
+  const userOverride = options.consult !== undefined || options.execute !== undefined;
+  let decision: Decision;
+  if (userOverride) {
+    const consultAdvisors = options.consult ?? true;
+    const executeWithVibe = options.execute ?? false;
+    decision = {
+      consultAdvisors,
+      advisors: options.advisors || ['claude', 'vibe', 'gemini'],
+      executeWithVibe,
+      explanation: consultAdvisors && !executeWithVibe ? 'User requested consultation only'
+        : executeWithVibe && !consultAdvisors ? 'User requested execution only'
+        : 'User-specified mode'
+    };
+    console.log('\n🎭 Using user-specified mode (skipping orchestrator)...');
+  } else {
+    console.log('\n🎭 Orchestrator deciding...');
+    decision = await getDecision(prompt);
+  }
   
   console.log(`  → ${decision.explanation}`);
   console.log(`  → Advisors: ${decision.advisors.join(', ')}`);
   console.log(`  → Execute with Vibe: ${decision.executeWithVibe}`);
 
-  // Step 2: Consult advisors in parallel
+  // Step 2: Consult advisors sequentially with live feedback
   let advisorResults: EngineResult[] = [];
   if (decision.consultAdvisors) {
     console.log('\n🤝 Consulting advisors...');
     const advisorStart = Date.now();
-    const results = await Promise.all(
-      decision.advisors.map(async (name) => {
-        console.log(`  → ${name}...`);
-        return runEngine(name, prompt);
-      })
-    );
-    advisorResults = results;
-    const successful = results.filter(r => r.status === 'ok').length;
+    for (const name of decision.advisors) {
+      console.log(`  → ${name}...`);
+      const result = await runEngine(name, prompt);
+      console.log(`     ${result.status === 'ok' ? '✓' : '✗'} ${result.status}${result.error ? ` (${result.error})` : ''}`);
+      advisorResults.push(result);
+    }
+    const successful = advisorResults.filter(r => r.status === 'ok').length;
     console.log(`  ✓ ${successful} advisor(s) responded in ${Date.now() - advisorStart}ms`);
   }
 
@@ -50,12 +59,9 @@ export async function runWorkflow(prompt: string, options: {
   let executionResult: EngineResult | null = null;
   if (decision.executeWithVibe) {
     console.log('\n⚡ Executing with Vibe...');
+    console.log('  → vibe...');
     executionResult = await runEngine('vibe', prompt);
-    if (executionResult.status === 'ok') {
-      console.log(`  ✓ Execution completed in ${executionResult.durationMs}ms`);
-    } else {
-      console.log(`  ✗ Execution failed: ${executionResult.error}`);
-    }
+    console.log(`     ${executionResult.status === 'ok' ? '✓' : '✗'} ${executionResult.status}${executionResult.error ? ` (${executionResult.error})` : ''}`);
   }
 
   return {

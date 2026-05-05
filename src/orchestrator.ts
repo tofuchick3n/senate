@@ -1,5 +1,14 @@
 import { runEngine } from './engines.js';
 
+function extractJson(text: string): string {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) return fence[1].trim();
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) return text.slice(start, end + 1);
+  return text.trim();
+}
+
 export type Decision = {
   consultAdvisors: boolean;
   advisors: string[];
@@ -29,20 +38,20 @@ export async function getDecision(prompt: string): Promise<Decision> {
     Task: ${prompt}
   `;
 
-  const result = await runEngine('claude', decisionPrompt);
+  const result = await runEngine('claude', decisionPrompt, 15000, false);
   
   if (result.status !== 'ok') {
     console.log(`[Orchestrator] Falling back to defaults (Claude error: ${result.error})`);
     return {
       consultAdvisors: true,
-      advisors: ['claude', 'vibe'],
+      advisors: ['claude', 'vibe', 'gemini'],
       executeWithVibe: true,
       explanation: 'Using defaults due to orchestrator error'
     };
   }
 
   try {
-    const parsed = JSON.parse(result.output);
+    const parsed = JSON.parse(extractJson(result.output));
     return {
       consultAdvisors: parsed.consultAdvisors ?? true,
       advisors: parsed.advisors ?? ['claude', 'vibe'],
@@ -53,7 +62,7 @@ export async function getDecision(prompt: string): Promise<Decision> {
     console.log(`[Orchestrator] Invalid JSON from Claude, using defaults: ${e}`);
     return {
       consultAdvisors: true,
-      advisors: ['claude', 'vibe'],
+      advisors: ['claude', 'vibe', 'gemini'],
       executeWithVibe: true,
       explanation: 'Invalid JSON from orchestrator, using defaults'
     };

@@ -2,7 +2,7 @@
 
 import { program } from 'commander';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult } from './workflow.js';
-import { listEngines, getAvailableEngines } from './engines.js';
+import { listEngines, getAvailableEngines, checkEngines } from './engines.js';
 
 program
   .name('senate')
@@ -32,11 +32,20 @@ program
 
     if (options.checkEngines) {
       console.log('Checking engine availability...');
-      const available = await getAvailableEngines();
-      console.log('Authenticated:', available.join(', '));
-      const unavailable = listEngines().filter(e => !available.includes(e));
+      const results = await checkEngines();
+      const available = Object.entries(results)
+        .filter(([_, r]) => r.status === 'ok')
+        .map(([name]) => name);
+      const unavailable = Object.entries(results)
+        .filter(([_, r]) => r.status !== 'ok')
+        .map(([name, r]) => ({ name, status: r.status, error: r.error }));
+      
+      console.log('Authenticated:', available.length > 0 ? available.join(', ') : 'none');
       if (unavailable.length > 0) {
-        console.log('Not authenticated:', unavailable.join(', '));
+        console.log('\nUnavailable engines:');
+        for (const { name, status, error } of unavailable) {
+          console.log(`  ${name}: ${status}${error ? ` (${error})` : ''}`);
+        }
       }
       return;
     }
@@ -46,11 +55,19 @@ program
       return;
     }
 
-    // Determine mode from flags
+    // Determine mode from flags. --consult-only implies skip execute; --execute-only implies skip consult.
+    const consult = options.consultOnly ? true
+      : options.executeOnly ? false
+      : options.noConsult ? false
+      : undefined;
+    const execute = options.executeOnly ? true
+      : options.consultOnly ? false
+      : options.noExecute ? false
+      : undefined;
     const mode = {
-      consult: options.consultOnly ? true : options.noConsult ? false : undefined,
-      execute: options.executeOnly ? true : options.noExecute ? false : undefined,
-      advisors: options.advisors?.split(',') || ['claude', 'vibe']
+      consult,
+      execute,
+      advisors: options.advisors?.split(',') || ['claude', 'vibe', 'gemini']
     };
 
     if (options.verbose) {
