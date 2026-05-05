@@ -100,6 +100,21 @@ program
       ? (e: WorkflowEvent) => process.stdout.write(JSON.stringify(e) + '\n')
       : undefined;
 
+    // Wire Ctrl-C: first press cancels gracefully (via AbortController) and lets the workflow
+    // emit/print whatever has finished. A second press exits immediately with 130.
+    const controller = new AbortController();
+    let sigintCount = 0;
+    const onSigint = () => {
+      sigintCount++;
+      if (sigintCount === 1) {
+        if (!machineMode) process.stderr.write('\n[cancel] aborting in-flight engines, will print partial results...\n');
+        controller.abort();
+      } else {
+        process.exit(130);
+      }
+    };
+    process.on('SIGINT', onSigint);
+
     const mode = {
       consult,
       execute,
@@ -108,7 +123,8 @@ program
       smart: Boolean(options.smart),
       // In machine modes the user expects clean stdout, so silence the human progress chatter on stderr too.
       quiet: machineMode,
-      onEvent
+      onEvent,
+      signal: controller.signal
     };
 
     if (!machineMode) printBanner();
@@ -127,13 +143,19 @@ program
       } else {
         console.log(formatWorkflowResult(result));
       }
+      if (result.cancelled) {
+        process.off('SIGINT', onSigint);
+        process.exit(130);
+      }
     } catch (error: any) {
       if (machineMode) {
         process.stdout.write(JSON.stringify({ type: 'error', message: error.message }) + '\n');
       } else {
-        console.error('\n❌ Error:', error.message);
+        console.error('\nError:', error.message);
       }
       process.exit(1);
+    } finally {
+      process.off('SIGINT', onSigint);
     }
   });
 

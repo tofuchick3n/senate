@@ -9,6 +9,7 @@ export type WorkflowResult = {
   synthesis: SynthesisResult | null;
   executionResult: EngineResult | null;
   totalDurationMs: number;
+  cancelled: boolean;
 };
 
 export type WorkflowEvent =
@@ -31,6 +32,7 @@ export type RunOptions = {
   smart?: boolean;
   quiet?: boolean;
   onEvent?: (e: WorkflowEvent) => void;
+  signal?: AbortSignal;
 };
 
 function defaultDecision(prompt: string, options: RunOptions): Decision {
@@ -83,7 +85,7 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
 
     const tasks = decision.advisors.map(async (name) => {
       const t0 = Date.now();
-      const result = await runEngine(name, prompt, 30000, false);
+      const result = await runEngine(name, prompt, { inactivityMs: 30000, stream: false, signal: options.signal });
       settled.add(name);
       const elapsed = Date.now() - t0;
       const icon = result.status === 'ok' ? '✓' : '✗';
@@ -115,16 +117,16 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
     emit({ type: 'consult_done', successful, total: advisorResults.length, durationMs: consultDuration });
   }
 
-  // Step 3: Synthesize advisor outputs. Skip if explicitly disabled or fewer than 2 succeeded.
+  // Step 3: Synthesize advisor outputs. Skip if explicitly disabled, cancelled, or fewer than 2 succeeded.
   let synthesisResult: SynthesisResult | null = null;
-  const wantSynthesis = options.synthesize !== false;
+  const wantSynthesis = options.synthesize !== false && !options.signal?.aborted;
   if (wantSynthesis && advisorResults.filter(r => r.status === 'ok').length >= 2) {
     log(section('SYNTHESIZE'));
     emit({ type: 'synthesis_start' });
     const t0 = Date.now();
     const stop = options.quiet ? () => {} : startSpinner('lead summarizer working');
     try {
-      synthesisResult = await synthesize(prompt, advisorResults);
+      synthesisResult = await synthesize(prompt, advisorResults, undefined, options.signal);
     } finally {
       stop();
     }
@@ -138,14 +140,14 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
     }
   }
 
-  // Step 4: Execute with Vibe if needed
+  // Step 4: Execute with Vibe if needed (skip if user cancelled).
   let executionResult: EngineResult | null = null;
-  if (decision.executeWithVibe) {
+  if (decision.executeWithVibe && !options.signal?.aborted) {
     log(section('EXECUTE (vibe)'));
     emit({ type: 'execute_start' });
     const stop = options.quiet ? () => {} : startSpinner('vibe working');
     try {
-      executionResult = await runEngine('vibe', prompt);
+      executionResult = await runEngine('vibe', prompt, { signal: options.signal });
     } finally {
       stop();
     }
@@ -165,7 +167,8 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
     advisorResults,
     synthesis: synthesisResult,
     executionResult,
-    totalDurationMs: Date.now() - start
+    totalDurationMs: Date.now() - start,
+    cancelled: Boolean(options.signal?.aborted)
   };
 }
 
@@ -175,7 +178,7 @@ export function formatWorkflowResult(result: WorkflowResult): string {
 
   lines.push('');
   lines.push(rule);
-  lines.push('  RESULTS');
+  lines.push(result.cancelled ? '  RESULTS  (cancelled — partial)' : '  RESULTS');
   lines.push(rule);
 
   if (result.executionResult?.status === 'ok') {

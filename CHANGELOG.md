@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `RunOptions` type with `quiet`, `onEvent`, `smart` fields.
 - ASCII banner shown once at startup in human mode.
 - Spinner for single-engine phases (orchestrator decide, synthesis, vibe execution); animates when stderr is a TTY, falls back to a static line otherwise.
+- `cancelled` engine status. Ctrl-C cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace) and prints whatever has finished. Second Ctrl-C exits immediately. Process exit code 130 when cancelled.
+- `cancelled: boolean` field on `WorkflowResult`; `(cancelled — partial)` indicator in the human report.
+- `signal?: AbortSignal` on `RunOptions` and `RunEngineOptions`; flows through advisor calls, the synthesis lead-summarizer call, and vibe execution.
+- Structured synthesis output. `SynthesisResult.structured` exposes `{ consensus: string[], disagreements: [{topic, positions:[{engine,stance}]}], outliers: [{engine,note}], recommendation }`. Synthesizer is now prompted for JSON; the prose `output` field is rendered from the structured form. When parse fails, falls back to the raw model output.
 
 ### Changed
 - `--consult-only` now implies skipping execution; `--execute-only` implies skipping consultation. Setting either flag bypasses the orchestrator round-trip.
@@ -26,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Breaking**: orchestrator routing is now opt-in via `--smart`. New default is consult-only with synthesis. Previously the orchestrator ran whenever no consult/execute flags were passed.
 - Section headers redesigned: removed emoji, replaced with `▸ DECIDE`, `▸ CONSULT`, `▸ SYNTHESIZE`, `▸ EXECUTE` plus thinner rule lines in the final report.
 - Progress chatter now goes to stderr; final result (human, JSON, or NDJSON) goes to stdout. Enables clean piping.
+- `runEngine` signature: now takes an options object `{ inactivityMs?, stream?, signal? }` instead of positional args. All callers updated.
+- Engines spawn detached (their own process group) so cancellation kills the whole subprocess tree, not just the wrapped binary.
 
 ### Fixed
 - Claude: `--permission-mode auto` (invalid value) → `bypassPermissions`
