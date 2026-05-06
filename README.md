@@ -7,82 +7,66 @@
    ╚════██║██╔══╝  ██║╚██╗██║██╔══██║   ██║   ██╔══╝
    ███████║███████╗██║ ╚████║██║  ██║   ██║   ███████╗
    ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
-       multi-model orchestration
 ```
 
-Multi-model orchestration CLI that wraps claude, vibe, and gemini, consults them in parallel on a prompt, then synthesizes their answers into a structured CONSENSUS / DISAGREEMENTS / OUTLIERS / RECOMMENDATION report. Uses subscriptions you already pay for — senate handles no API keys itself.
+A small CLI that asks two or three model CLIs the same question at once (claude and vibe by default; gemini is opt-in via `-a`), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
 
-## Install
+## How I use it
 
-Node >= 18
+My main agent is Claude Code (Opus). When it hits a real judgment call — "should this migration be one PR or three?", "is this auth model safe?", "are these tests covering the right thing?" — I have it shell out to `senate` for a second opinion. Two or three other models look at the same question, senate folds their answers into one report, and Claude Code reads that as part of deciding what to actually do.
 
-```bash
-git clone https://github.com/tofuchick3n/senate && cd senate && npm install && npm run build && npm link
+So senate is the **bench seat** for my main agent: cheap to consult, narrowly scoped, structured output, and you can always see which advisor said what.
+
+You don't need an "outer agent" to use it. It works fine as a one-shot CLI, a REPL, or piped into and out of `jq`. The Claude-Code-as-orchestrator flow is just where it earns its keep for me.
+
+## How it works
+
+```mermaid
+flowchart LR
+  P[your prompt] -->|positional or stdin| W[workflow]
+  W --> CO[consult]
+  CO --> C1[claude]
+  CO --> C2[vibe]
+  CO --> C3[gemini]
+  C1 --> S[synthesize]
+  C2 --> S
+  C3 --> S
+  S -->|claude → vibe → gemini fallback| O[CONSENSUS<br/>DISAGREEMENTS<br/>OUTLIERS<br/>RECOMMENDATION]
+  O --> OUT[stdout]
+  W -.--smart.-> R[orchestrator<br/>Claude routes]
+  R --> CO
+  W -.opt-in.-> X[execute via vibe]
+  X --> OUT
 ```
 
-Bin name: `senate`. After `npm link`, `senate` is on PATH.
-
-## Engines
-
-Three wrapped CLIs. Each must be installed and authenticated independently:
-
-| Engine | Install / Auth |
-|--------|----------------|
-| claude | Install per Anthropic docs; run `claude` to authenticate |
-| vibe | Run `vibe --setup` |
-| gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility |
-
-Verify with `senate --check-engines`. List configured engines with `senate --list-engines`.
+Default path: parallel consult → synthesize → print. No orchestrator round-trip, no execution. `--smart` adds the routing step; `--execute-only` (or letting the orchestrator decide) adds the vibe-runs-the-task step.
 
 ## Quickstart
 
 ```bash
-# Basic prompt — consults claude + vibe in parallel, synthesizes.
-senate "Explain the factory pattern"
+git clone https://github.com/tofuchick3n/senate
+cd senate
+npm install && npm run build && npm link
 
-# From stdin
-echo "Compare Rust and Zig" | senate
+# Each wrapped CLI authenticates separately.
+senate --check-engines
 
-# File as prompt
-senate < spec.md
-
-# Positional + stdin concatenated
-senate "context:" < details.md
-
-# Conversation mode — drops into a senate> REPL after the first answer
-senate --repl "First question"
-
-# Reprint a previous session
-senate --list-sessions
-senate --resume 0
+# Try it.
+senate "Should I use REST or GraphQL for an internal API?"
 ```
 
-## Flags
+A few common shapes:
 
-| Flag | Description |
-|------|-------------|
-| `[query]` | Positional. Optional if stdin is piped |
-| `--consult-only` | Only consult advisors. Implies execute=false. Bypasses orchestrator |
-| `--execute-only` | Only execute via vibe. Implies consult=false. Bypasses orchestrator |
-| `--no-consult` | Skip consult phase |
-| `--no-execute` | Skip execute phase |
-| `--smart` | Opt into orchestrator routing (Claude decides what to do) |
-| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,vibe` |
-| `--no-synthesis` | Skip synthesis step |
-| `--json` | Print final WorkflowResult as JSON blob to stdout |
-| `--json-stream` | Emit NDJSON events on stdout as they happen. Mutex with `--json` |
-| `--no-tui` | Disable the live dashboard (fall back to plain settle-line output) |
-| `--repl` | After the first result, drop into a `senate>` REPL with prior turns as context |
-| `--no-transcript` | Don't persist this session to `~/.senate/sessions/` |
-| `--list-sessions [count]` | List recent saved sessions (default 20) |
-| `--resume <ref>` | Reprint a saved session by index (0=newest) or path |
-| `--list-engines` | List configured engines + resolved bin paths |
-| `--check-engines` | Ping each engine to verify auth |
-| `-v, --verbose` | Show mode/advisors at startup |
+```bash
+echo "Compare Rust and Zig for systems work" | senate
+senate < spec.md
+senate --repl "First question — let's talk about it"
+senate --list-sessions && senate --resume 0
+```
 
 ## Recipes
 
-Senate's `--help` lists every flag, but it doesn't show how to compose them with other tools. Here are patterns I actually use.
+`senate --help` lists every flag, but it doesn't show how to compose with other tools. The patterns I actually use:
 
 ### Review a GitHub issue
 
@@ -92,19 +76,25 @@ gh issue view 703 --repo OWNER/REPO --json title,body \
   --jq '"# \(.title)\n\n\(.body)"' \
   | senate "Review this issue and recommend next steps:"
 
-# Body + comments (full thread context)
+# Body + comments (full thread)
 gh issue view 703 --repo OWNER/REPO --json title,body,comments \
   --jq '"# \(.title)\n\n\(.body)\n\n## Comments\n" + ([.comments[] | "**\(.author.login):**\n\(.body)"] | join("\n\n"))' \
   | senate "Help me decide what to do here:"
 ```
 
-### Issue + linked source code
+### Issue plus the linked source
 
 ```bash
 { gh issue view 703 --json body --jq .body
   echo "---"
   cat src/relevant/file.ts
-} | senate --consult-only "Review this architecture decision in light of the existing code:"
+} | senate --consult-only "Review this in light of the existing code:"
+```
+
+### Pipe a PR diff
+
+```bash
+gh pr diff 42 | senate "Review for bugs, naming, and edge cases:"
 ```
 
 ### Just the recommendation, machine-readable
@@ -113,6 +103,12 @@ gh issue view 703 --repo OWNER/REPO --json title,body,comments \
 gh issue view 703 --json body --jq .body \
   | senate "Architecture review:" --json \
   | jq -r .synthesis.structured.recommendation
+```
+
+### Get just the disagreements
+
+```bash
+senate "..." --json | jq '.synthesis.structured.disagreements'
 ```
 
 ### Iterate on a long doc
@@ -125,79 +121,45 @@ senate --repl < spec.md
 # senate> /exit
 ```
 
-### Pick faster advisors
+### Skip vibe for read-only review work (faster)
 
 ```bash
-# Skip vibe (it's slower for read-only review work).
 senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
 ```
 
-### Reprint or re-derive a past session
+## Modes
 
-```bash
-senate --list-sessions          # see what you've run recently
-senate --resume 0               # newest
-senate --resume <path>          # specific file
-```
+| You want | Use |
+|----------|-----|
+| Default — consult + synthesize, no execute | _(no flag)_ |
+| Let Claude decide whether to consult and/or execute | `--smart` |
+| Skip the synthesis step | `--no-synthesis` |
+| Pick advisors | `-a claude,gemini` |
+| Just run vibe | `--execute-only` |
+| Drop into a REPL after the first answer | `--repl` |
+| Machine output | `--json` or `--json-stream` |
+| Don't save this session | `--no-transcript` |
+| Hide the live dashboard | `--no-tui` |
 
-### Pipe a PR diff for review
-
-```bash
-gh pr diff 42 | senate "Review for bugs, naming, and edge cases:"
-```
-
-### Get just disagreements
-
-```bash
-senate "..." --json | jq '.synthesis.structured.disagreements'
-```
-
-## Default workflow
-
-By default senate:
-
-1. Reads the prompt (positional arg, stdin, or both concatenated)
-2. Consults the default advisors (`claude` and `vibe`) in parallel
-3. Synthesizes their outputs into a structured report (consensus / disagreements / outliers / recommendation), with a lead summarizer falling back claude → vibe → gemini if the lead is unavailable
-4. Prints to stdout (human-friendly), with progress chatter on stderr
-
-There is no execution by default. To run the orchestrator (Claude decides whether to consult and/or execute via vibe), pass `--smart`.
-
-## Live dashboard
-
-In a real terminal (stderr is a TTY) and human mode, senate shows a live per-advisor panel with an animated spinner, ticking elapsed time, and status glyph. The dashboard renders to stderr so stdout stays clean for piping. It auto-disables when:
-
-- `--json` or `--json-stream` is set (machine modes)
-- stderr is not a TTY (output is being piped or redirected)
-- you pass `--no-tui`
-
-When disabled, you get the static fallback: banner + per-engine settle line as each advisor finishes.
+For the full set, run `senate --help`. The reference table is at the bottom.
 
 ## Conversation REPL
 
-`senate --repl "First question"` runs the first turn normally, then drops into a `senate>` prompt. Each follow-up turn re-runs the workflow with prior turns prepended as context (using the synthesis recommendation when available, falling back to synthesis prose, then raw advisor outputs).
+`senate --repl "..."` runs the first turn normally, then drops into a `senate>` prompt. Each follow-up turn prepends prior turns as context (using the synthesis recommendation when available, falling back to prose, then raw advisor outputs).
 
-REPL commands:
+```
+senate> /history
+senate> /clear
+senate> /exit
+```
 
-| Command | Effect |
-|---------|--------|
-| `/exit`, `/quit` | Exit cleanly |
-| `/clear` | Drop prior context — next turn starts fresh |
-| `/history` | List prior turns |
+Ctrl-C cancels the current turn (partial result saved); a second Ctrl-C exits. Each turn becomes its own session file under `~/.senate/sessions/`.
 
-Ctrl-C cancels the current turn (partial result saved); a second Ctrl-C exits. Each turn is its own session file under `~/.senate/sessions/`.
-
-The REPL is skipped automatically in machine modes, when stdin is piped (one-shot input pattern), and after a cancelled run.
+The REPL is skipped automatically in machine modes, when stdin is piped (one-shot input), and after a cancelled run.
 
 ## Persistent transcripts
 
-Every senate run writes a JSONL transcript to `~/.senate/sessions/<utc>-<seq>.jsonl` unless `--no-transcript` is set. Each file contains:
-
-- A `session_start` line with the prompt and mode
-- Every `WorkflowEvent` as it happens
-- A `session_end` line with the full `WorkflowResult`
-
-Manage them with:
+Every senate run writes a JSONL transcript to `~/.senate/sessions/<utc>-<seq>.jsonl` unless `--no-transcript`. Each file holds: a `session_start` line with the prompt and mode, every `WorkflowEvent` as it happens, and a `session_end` line with the full `WorkflowResult`.
 
 ```bash
 senate --list-sessions          # 20 most recent
@@ -206,41 +168,11 @@ senate --resume 0               # reprint newest
 senate --resume <path>          # reprint a specific file
 ```
 
-Writes are best-effort — IO failures never block the run, just print a one-time warning to stderr.
-
-## JSON / NDJSON output
-
-`--json`: prints the full WorkflowResult (decision, advisorResults, synthesis, executionResult, totalDurationMs, cancelled) as one JSON blob on stdout.
-
-`--json-stream`: prints NDJSON events on stdout as the workflow progresses. Event types: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, plus a final `{type:'result', result:...}`.
-
-In machine modes the banner, spinner, and section headers are silenced. Errors are emitted as `{type:'error', message:'...'}` on stdout.
-
-Useful:
-
-```bash
-senate "..." --json | jq .synthesis.structured.disagreements
-```
-
-## Bin overrides
-
-Set `SENATE_<NAME>_BIN` to override the binary path:
-
-```bash
-SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."
-```
-
-`--list-engines` and `--check-engines` annotate engines using overrides.
-
-## Cancellation (Ctrl-C)
-
-First Ctrl-C: cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace, kills the whole subprocess group), prints whatever finished, exits 130.
-
-Second Ctrl-C: immediate exit.
+Writes are best-effort — IO failures never block the run, just print one warning to stderr.
 
 ## Cost & timing
 
-The human-mode footer includes a USAGE block with per-engine wall-clock, token counts, and (where available) cost:
+The human-mode footer shows per-engine wall-clock, tokens, and cost where available:
 
 ```
 ────────────────────────────────────────────────────────────
@@ -253,13 +185,45 @@ The human-mode footer includes a USAGE block with per-engine wall-clock, token c
   total                   9.6s
 ```
 
-Token counts come from each engine's JSON output mode (claude and gemini). Vibe stays on text mode and currently doesn't surface tokens; only its wall-clock shows up.
+Tokens come from each engine's JSON output mode (claude and gemini). Vibe stays on text mode and doesn't surface tokens — only its wall-clock shows up. The same data is on `EngineResult.usage` for `--json` consumers.
 
-Same data is available on `EngineResult.usage` for `--json` consumers.
+## Live dashboard
 
-## Synthesis output
+In a real terminal (stderr is a TTY) and human mode, you get an animated per-advisor panel — spinner, ticking elapsed, status glyph. It renders to stderr so stdout stays clean for piping. Auto-disables when:
 
-The synthesizer returns a structured object:
+- `--json` or `--json-stream` is set
+- stderr isn't a TTY (output is being piped)
+- you pass `--no-tui`
+
+When disabled you get the static fallback: banner + per-engine settle line as each advisor finishes.
+
+## Engines
+
+Three wrapped CLIs. Each must be installed and authenticated independently:
+
+| Engine | Install / auth |
+|--------|----------------|
+| claude | Install per Anthropic docs; run `claude` to authenticate |
+| vibe | Run `vibe --setup` |
+| gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility |
+
+Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_VIBE_BIN`, `_GEMINI_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
+
+## Cancellation (Ctrl-C)
+
+First Ctrl-C cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace; kills the whole subprocess group), prints whatever finished, exits 130. Second Ctrl-C: immediate exit.
+
+## JSON output
+
+`--json` prints the full `WorkflowResult` as one JSON blob on stdout:
+
+```ts
+{ decision, advisorResults, synthesis, executionResult, totalDurationMs, cancelled }
+```
+
+`--json-stream` prints NDJSON events on stdout as the workflow progresses: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, plus a final `{type:'result', result:...}`. Errors come through as `{type:'error', message:'...'}`.
+
+The synthesis structured object:
 
 ```ts
 {
@@ -270,34 +234,41 @@ The synthesizer returns a structured object:
 }
 ```
 
-Exposed on `WorkflowResult.synthesis.structured` for `--json` consumers. Human view renders this deterministically. If the model returns malformed JSON, falls back to the raw output.
+Available on `WorkflowResult.synthesis.structured`. The human view is rendered deterministically from this. If the model returns malformed JSON, the prose falls back to the raw output and `structured` is `null`.
 
-## Project layout
+## All flags
 
-| File | Purpose |
-|------|---------|
-| `src/cli.ts` | Commander entry, flag parsing, mode determination, output dispatch |
-| `src/workflow.ts` | `runWorkflow`, `WorkflowResult`, `WorkflowEvent`, `formatWorkflowResult` |
-| `src/orchestrator.ts` | Claude routing decision (only used with `--smart`) |
-| `src/engines.ts` | `runEngine` (spawn + auth detection + cancel), `checkEngines` |
-| `src/synthesis.ts` | Lead-summarizer fallback, JSON parsing, prose rendering |
-| `src/registry.ts` | Single source of truth for engine config (bin/args/parse, auth patterns, synthesis priority, default advisors, `SENATE_*_BIN` resolution, per-engine `parseUsage` for tokens/cost) |
-| `src/transcripts.ts` | Persistent session writer + reader (`~/.senate/sessions/*.jsonl`) |
-| `src/tui.ts` | Live dashboard via `log-update` (per-advisor spinner + elapsed) |
-| `src/repl.ts` | Conversation REPL — `buildEnrichedPrompt`, `startRepl` |
-| `src/ui.ts` | Banner + spinner + section helpers (used in the static fallback) |
-| `src/__tests__/` | node:test unit tests |
-| `docs/` | Architecture, usage, engines, roadmap |
-| `CHANGELOG.md` | Keep a Changelog format |
+| Flag | What it does |
+|------|--------------|
+| `[query]` | Positional. Optional if stdin is piped |
+| `--consult-only` | Only consult advisors. Implies execute=false. Bypasses orchestrator |
+| `--execute-only` | Only execute via vibe. Implies consult=false. Bypasses orchestrator |
+| `--no-consult` | Skip consult phase |
+| `--no-execute` | Skip execute phase |
+| `--smart` | Opt into orchestrator routing (Claude decides what to do) |
+| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,vibe` |
+| `--no-synthesis` | Skip synthesis |
+| `--json` | Print final `WorkflowResult` as JSON to stdout |
+| `--json-stream` | NDJSON events on stdout. Mutex with `--json` |
+| `--no-tui` | Disable the live dashboard |
+| `--repl` | Drop into a `senate>` REPL after the first result |
+| `--no-transcript` | Don't persist this session |
+| `--list-sessions [count]` | List recent saved sessions (default 20) |
+| `--resume <ref>` | Reprint a saved session by index (0=newest) or path |
+| `--list-engines` | List configured engines + resolved bin paths |
+| `--check-engines` | Ping each engine to verify auth |
+| `-v, --verbose` | Show mode/advisors at startup |
 
 ## Scripts
 
-| Script | Description |
-|--------|-------------|
+| Script | What |
+|--------|------|
 | `npm run build` | tsc to dist/ |
 | `npm test` | Runs node:test on compiled dist/__tests__ |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run dev -- "..."` | tsx watch mode |
+
+For internals, see [`docs/architecture.md`](docs/architecture.md), [`docs/engines.md`](docs/engines.md), [`docs/usage.md`](docs/usage.md), and [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 

@@ -1,16 +1,17 @@
+import { getVersion } from './version.js';
+
 const FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-const BANNER = `
+const ART = `
    ███████╗███████╗███╗   ██╗ █████╗ ████████╗███████╗
    ██╔════╝██╔════╝████╗  ██║██╔══██╗╚══██╔══╝██╔════╝
    ███████╗█████╗  ██╔██╗ ██║███████║   ██║   █████╗
    ╚════██║██╔══╝  ██║╚██╗██║██╔══██║   ██║   ██╔══╝
    ███████║███████╗██║ ╚████║██║  ██║   ██║   ███████╗
-   ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
-       multi-model orchestration · v0.2.0`;
+   ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝`;
 
 export function printBanner(): void {
-  process.stderr.write(BANNER + '\n');
+  process.stderr.write(`${ART}\n       multi-model orchestration · v${getVersion()}\n`);
 }
 
 export function section(label: string): string {
