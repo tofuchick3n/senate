@@ -135,7 +135,7 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
           status: 'error',
           output: '',
           durationMs,
-          error: `Inactivity timeout (no output for ${(inactivityMs / 1000).toFixed(0)}s — try --timeout <seconds> or set advisorInactivityMs in registry)`
+          error: `Inactivity timeout (no output for ${(inactivityMs / 1000).toFixed(0)}s — try --timeout <seconds>)`
         });
       }
 
