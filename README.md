@@ -1,6 +1,16 @@
 # Senate
 
-Multi-model orchestration CLI that wraps claude, vibe, and gemini, consults them in parallel on a prompt, then synthesizes their answers into a structured CONSENSUS / DISAGREEMENTS / OUTLIERS / RECOMMENDATION report. Inspired by https://council.armstr.ng/. Uses subscriptions you already pay for — senate handles no API keys itself.
+```
+   ███████╗███████╗███╗   ██╗ █████╗ ████████╗███████╗
+   ██╔════╝██╔════╝████╗  ██║██╔══██╗╚══██╔══╝██╔════╝
+   ███████╗█████╗  ██╔██╗ ██║███████║   ██║   █████╗
+   ╚════██║██╔══╝  ██║╚██╗██║██╔══██║   ██║   ██╔══╝
+   ███████║███████╗██║ ╚████║██║  ██║   ██║   ███████╗
+   ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
+       multi-model orchestration
+```
+
+Multi-model orchestration CLI that wraps claude, vibe, and gemini, consults them in parallel on a prompt, then synthesizes their answers into a structured CONSENSUS / DISAGREEMENTS / OUTLIERS / RECOMMENDATION report. Uses subscriptions you already pay for — senate handles no API keys itself.
 
 ## Install
 
@@ -69,6 +79,78 @@ senate --resume 0
 | `--list-engines` | List configured engines + resolved bin paths |
 | `--check-engines` | Ping each engine to verify auth |
 | `-v, --verbose` | Show mode/advisors at startup |
+
+## Recipes
+
+Senate's `--help` lists every flag, but it doesn't show how to compose them with other tools. Here are patterns I actually use.
+
+### Review a GitHub issue
+
+```bash
+# Issue body only
+gh issue view 703 --repo OWNER/REPO --json title,body \
+  --jq '"# \(.title)\n\n\(.body)"' \
+  | senate "Review this issue and recommend next steps:"
+
+# Body + comments (full thread context)
+gh issue view 703 --repo OWNER/REPO --json title,body,comments \
+  --jq '"# \(.title)\n\n\(.body)\n\n## Comments\n" + ([.comments[] | "**\(.author.login):**\n\(.body)"] | join("\n\n"))' \
+  | senate "Help me decide what to do here:"
+```
+
+### Issue + linked source code
+
+```bash
+{ gh issue view 703 --json body --jq .body
+  echo "---"
+  cat src/relevant/file.ts
+} | senate --consult-only "Review this architecture decision in light of the existing code:"
+```
+
+### Just the recommendation, machine-readable
+
+```bash
+gh issue view 703 --json body --jq .body \
+  | senate "Architecture review:" --json \
+  | jq -r .synthesis.structured.recommendation
+```
+
+### Iterate on a long doc
+
+```bash
+senate --repl < spec.md
+# senate> what are the riskiest assumptions?
+# senate> draft a migration plan for the database schema
+# senate> /history
+# senate> /exit
+```
+
+### Pick faster advisors
+
+```bash
+# Skip vibe (it's slower for read-only review work).
+senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
+```
+
+### Reprint or re-derive a past session
+
+```bash
+senate --list-sessions          # see what you've run recently
+senate --resume 0               # newest
+senate --resume <path>          # specific file
+```
+
+### Pipe a PR diff for review
+
+```bash
+gh pr diff 42 | senate "Review for bugs, naming, and edge cases:"
+```
+
+### Get just disagreements
+
+```bash
+senate "..." --json | jq '.synthesis.structured.disagreements'
+```
 
 ## Default workflow
 
