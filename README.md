@@ -27,7 +27,7 @@ Verify with `senate --check-engines`. List configured engines with `senate --lis
 ## Quickstart
 
 ```bash
-# Basic prompt
+# Basic prompt — consults claude + vibe in parallel, synthesizes.
 senate "Explain the factory pattern"
 
 # From stdin
@@ -38,6 +38,13 @@ senate < spec.md
 
 # Positional + stdin concatenated
 senate "context:" < details.md
+
+# Conversation mode — drops into a senate> REPL after the first answer
+senate --repl "First question"
+
+# Reprint a previous session
+senate --list-sessions
+senate --resume 0
 ```
 
 ## Flags
@@ -54,6 +61,11 @@ senate "context:" < details.md
 | `--no-synthesis` | Skip synthesis step |
 | `--json` | Print final WorkflowResult as JSON blob to stdout |
 | `--json-stream` | Emit NDJSON events on stdout as they happen. Mutex with `--json` |
+| `--no-tui` | Disable the live dashboard (fall back to plain settle-line output) |
+| `--repl` | After the first result, drop into a `senate>` REPL with prior turns as context |
+| `--no-transcript` | Don't persist this session to `~/.senate/sessions/` |
+| `--list-sessions [count]` | List recent saved sessions (default 20) |
+| `--resume <ref>` | Reprint a saved session by index (0=newest) or path |
 | `--list-engines` | List configured engines + resolved bin paths |
 | `--check-engines` | Ping each engine to verify auth |
 | `-v, --verbose` | Show mode/advisors at startup |
@@ -68,6 +80,51 @@ By default senate:
 4. Prints to stdout (human-friendly), with progress chatter on stderr
 
 There is no execution by default. To run the orchestrator (Claude decides whether to consult and/or execute via vibe), pass `--smart`.
+
+## Live dashboard
+
+In a real terminal (stderr is a TTY) and human mode, senate shows a live per-advisor panel with an animated spinner, ticking elapsed time, and status glyph. The dashboard renders to stderr so stdout stays clean for piping. It auto-disables when:
+
+- `--json` or `--json-stream` is set (machine modes)
+- stderr is not a TTY (output is being piped or redirected)
+- you pass `--no-tui`
+
+When disabled, you get the static fallback: banner + per-engine settle line as each advisor finishes.
+
+## Conversation REPL
+
+`senate --repl "First question"` runs the first turn normally, then drops into a `senate>` prompt. Each follow-up turn re-runs the workflow with prior turns prepended as context (using the synthesis recommendation when available, falling back to synthesis prose, then raw advisor outputs).
+
+REPL commands:
+
+| Command | Effect |
+|---------|--------|
+| `/exit`, `/quit` | Exit cleanly |
+| `/clear` | Drop prior context — next turn starts fresh |
+| `/history` | List prior turns |
+
+Ctrl-C cancels the current turn (partial result saved); a second Ctrl-C exits. Each turn is its own session file under `~/.senate/sessions/`.
+
+The REPL is skipped automatically in machine modes, when stdin is piped (one-shot input pattern), and after a cancelled run.
+
+## Persistent transcripts
+
+Every senate run writes a JSONL transcript to `~/.senate/sessions/<utc>-<seq>.jsonl` unless `--no-transcript` is set. Each file contains:
+
+- A `session_start` line with the prompt and mode
+- Every `WorkflowEvent` as it happens
+- A `session_end` line with the full `WorkflowResult`
+
+Manage them with:
+
+```bash
+senate --list-sessions          # 20 most recent
+senate --list-sessions 5        # most recent 5
+senate --resume 0               # reprint newest
+senate --resume <path>          # reprint a specific file
+```
+
+Writes are best-effort — IO failures never block the run, just print a one-time warning to stderr.
 
 ## JSON / NDJSON output
 
@@ -99,6 +156,25 @@ First Ctrl-C: cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace, k
 
 Second Ctrl-C: immediate exit.
 
+## Cost & timing
+
+The human-mode footer includes a USAGE block with per-engine wall-clock, token counts, and (where available) cost:
+
+```
+────────────────────────────────────────────────────────────
+  USAGE
+────────────────────────────────────────────────────────────
+  claude                  4.8s  12 tok (6 in / 6 out)  $0.1233
+  gemini                  4.6s  12016 tok (3530 in / 27 out)
+  synthesis (claude)      4.9s
+  ──────────────────── ───────
+  total                   9.6s
+```
+
+Token counts come from each engine's JSON output mode (claude and gemini). Vibe stays on text mode and currently doesn't surface tokens; only its wall-clock shows up.
+
+Same data is available on `EngineResult.usage` for `--json` consumers.
+
 ## Synthesis output
 
 The synthesizer returns a structured object:
@@ -123,9 +199,12 @@ Exposed on `WorkflowResult.synthesis.structured` for `--json` consumers. Human v
 | `src/orchestrator.ts` | Claude routing decision (only used with `--smart`) |
 | `src/engines.ts` | `runEngine` (spawn + auth detection + cancel), `checkEngines` |
 | `src/synthesis.ts` | Lead-summarizer fallback, JSON parsing, prose rendering |
-| `src/registry.ts` | Single source of truth for engine config |
-| `src/ui.ts` | Banner, spinner, section helpers |
-| `src/__tests__/` | Node:test unit tests |
+| `src/registry.ts` | Single source of truth for engine config (bin/args/parse, auth patterns, synthesis priority, default advisors, `SENATE_*_BIN` resolution, per-engine `parseUsage` for tokens/cost) |
+| `src/transcripts.ts` | Persistent session writer + reader (`~/.senate/sessions/*.jsonl`) |
+| `src/tui.ts` | Live dashboard via `log-update` (per-advisor spinner + elapsed) |
+| `src/repl.ts` | Conversation REPL — `buildEnrichedPrompt`, `startRepl` |
+| `src/ui.ts` | Banner + spinner + section helpers (used in the static fallback) |
+| `src/__tests__/` | node:test unit tests |
 | `docs/` | Architecture, usage, engines, roadmap |
 | `CHANGELOG.md` | Keep a Changelog format |
 
