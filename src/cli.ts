@@ -7,6 +7,7 @@ import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './regist
 import { printBanner } from './ui.js';
 import { startTui } from './tui.js';
 import { startRepl, type Turn } from './repl.js';
+import { getVersion } from './version.js';
 import {
   TranscriptWriter,
   listSessions,
@@ -23,7 +24,7 @@ async function readStdin(): Promise<string> {
 program
   .name('senate')
   .description('Multi-model orchestration CLI — consult claude, vibe, gemini in parallel')
-  .version('0.2.0')
+  .version(getVersion())
   .argument('[query]', 'Task or question to process. If omitted and stdin is piped, stdin is used.')
 
   // Mode flags
