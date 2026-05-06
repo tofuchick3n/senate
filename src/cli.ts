@@ -3,9 +3,11 @@
 import { program } from 'commander';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
-import { getDefaultAdvisors, listEngineEntries, getEngineConfig } from './registry.js';
-import { printBanner } from './ui.js';
+import { getDefaultAdvisors, listEngineEntries, getEngineConfig, listEngineNames } from './registry.js';
+import { printBanner, formatAdvisorLine } from './ui.js';
 import { startTui } from './tui.js';
+import { parseDuration } from './duration.js';
+import { loadConfig } from './config.js';
 import { startRepl, type Turn } from './repl.js';
 import { getVersion } from './version.js';
 import {
@@ -34,15 +36,18 @@ program
   .option('--no-execute', 'Skip Vibe execution')
   .option('--smart', 'Let the orchestrator (Claude) decide whether to consult and/or execute')
 
-  // Advisor selection
-  .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', getDefaultAdvisors().join(','))
+  // Advisor selection. Default is resolved at runtime: ~/.senate/config.json `advisors`
+  // field if present, otherwise the registry's default list. (Commander's static default
+  // would shadow the config file, so we leave it undefined and resolve in the action.)
+  .option('-a, --advisors <list>', `Comma-separated advisors. Default: ~/.senate/config.json or ${getDefaultAdvisors().join(',')}`)
   .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
-  .option('--timeout <seconds>', 'Per-advisor inactivity timeout override (in seconds). Defaults: claude/gemini=120s, vibe=60s', (v) => parseInt(v, 10))
+  .option('--timeout <duration>', 'Per-advisor inactivity timeout. Accepts 600, 600s, 10m, 1h, 1500ms. Defaults: claude=120s, gemini=10m, vibe=60s')
 
   // Output modes
   .option('--json', 'Print final result as a single JSON blob to stdout')
   .option('--json-stream', 'Print NDJSON events to stdout as they happen')
   .option('--no-tui', 'Disable the live dashboard (fallback to plain settle-line output)')
+  .option('--quiet', 'Suppress all progress output (banner, dashboard, settle lines, save footer); print the final result only')
   .option('--repl', 'After the first result, drop into a conversation REPL with prior turns as context')
 
   // Transcripts (#12)
@@ -151,19 +156,28 @@ program
     const jsonMode = Boolean(options.json);
     const streamMode = Boolean(options.jsonStream);
     const machineMode = jsonMode || streamMode;
+    const quietMode = Boolean(options.quiet);
 
-    // TUI is on by default in human + TTY mode. --no-tui disables it. Machine modes always disable.
-    const tuiEnabled = options.tui !== false && !machineMode && process.stderr.isTTY;
-    const tui = tuiEnabled ? startTui() : null;
-    // When TUI is on we want the workflow.ts settle-line chatter silenced — the dashboard replaces it.
-    const workflowQuiet = machineMode || tuiEnabled;
+    // Resolve advisors: explicit -a → ~/.senate/config.json `advisors` → registry default.
+    const config = loadConfig();
+    const advisorsRaw: string =
+      options.advisors ??
+      (config.advisors && config.advisors.length > 0 ? config.advisors.join(',') : getDefaultAdvisors().join(','));
+    const advisors = advisorsRaw.split(',').map((s: string) => s.trim()).filter(Boolean);
+
+    // TUI is on by default in human + TTY mode. --no-tui or --quiet disables it. Machine modes always disable.
+    const tuiEnabled = options.tui !== false && !machineMode && !quietMode && process.stderr.isTTY;
+    const advisorLine = formatAdvisorLine(advisors, listEngineNames());
+    const tui = tuiEnabled ? startTui({ advisorLine }) : null;
+    // When TUI is on, machine mode is on, or --quiet is set, silence workflow.ts settle-line chatter.
+    const workflowQuiet = machineMode || tuiEnabled || quietMode;
 
     // Transcript writer (best-effort; commander's --no-transcript flips options.transcript false).
     const wantTranscript = options.transcript !== false;
     const transcriptMode = {
       consult: options.consultOnly ?? !options.noConsult,
       execute: options.executeOnly ?? !options.noExecute,
-      advisors: options.advisors.split(',').map((s: string) => s.trim()).filter(Boolean),
+      advisors,
       smart: Boolean(options.smart),
       synthesize: options.synthesis !== false
     };
@@ -175,6 +189,8 @@ program
       transcript?.appendEvent(e);
     };
 
+    const sigintQuiet = machineMode || quietMode;
+
     // Wire Ctrl-C: first press cancels gracefully (via AbortController) and lets the workflow
     // emit/print whatever has finished. A second press exits immediately with 130.
     const controller = new AbortController();
@@ -182,7 +198,7 @@ program
     const onSigint = () => {
       sigintCount++;
       if (sigintCount === 1) {
-        if (!machineMode) process.stderr.write('\n[cancel] aborting in-flight engines, will print partial results...\n');
+        if (!sigintQuiet) process.stderr.write('\n[cancel] aborting in-flight engines, will print partial results...\n');
         controller.abort();
       } else {
         process.exit(130);
@@ -190,15 +206,17 @@ program
     };
     process.on('SIGINT', onSigint);
 
-    // --timeout is in seconds; convert to ms. Validates positive integer.
-    const advisorInactivityMs = (typeof options.timeout === 'number' && options.timeout > 0)
-      ? options.timeout * 1000
-      : undefined;
+    // --timeout accepts duration strings (600, 600s, 10m, 1h, 1500ms). Bare integer = seconds.
+    const advisorInactivityMs = parseDuration(options.timeout);
+    if (options.timeout !== undefined && advisorInactivityMs === undefined) {
+      console.error(`Error: --timeout: could not parse "${options.timeout}" (try 600, 600s, 10m, 1h, 1500ms)`);
+      process.exit(2);
+    }
 
     const mode = {
       consult,
       execute,
-      advisors: options.advisors.split(',').map((s: string) => s.trim()).filter(Boolean),
+      advisors,
       synthesize: options.synthesis !== false,
       smart: Boolean(options.smart),
       // Silence workflow.ts chatter when in machine modes (clean stdout) or when the TUI is showing the same info.
@@ -208,8 +226,11 @@ program
       advisorInactivityMs
     };
 
-    // Banner is for the static fallback path. The TUI has its own header.
-    if (!machineMode && !tuiEnabled) printBanner();
+    // Banner is for the static fallback path. The TUI has its own header. --quiet suppresses both.
+    if (!machineMode && !tuiEnabled && !quietMode) {
+      printBanner();
+      process.stderr.write(`       ${advisorLine}\n`);
+    }
 
     if (options.verbose && !machineMode) {
       console.error(`[verbose] consult=${mode.consult} execute=${mode.execute} smart=${mode.smart}`);
@@ -226,7 +247,7 @@ program
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       } else {
         console.log(formatWorkflowResult(result));
-        if (transcript) console.log(`(saved to ${transcript.path})`);
+        if (transcript && !quietMode) console.log(`(saved to ${transcript.path})`);
       }
 
       // REPL: only in human + interactive mode. Skip if cancelled, machine modes, or no TTY.
@@ -248,7 +269,7 @@ program
               const turnSigint = () => {
                 turnSigintCount++;
                 if (turnSigintCount === 1) {
-                  process.stderr.write('\n[cancel] aborting current turn (Ctrl-C again to exit)\n');
+                  if (!quietMode) process.stderr.write('\n[cancel] aborting current turn (Ctrl-C again to exit)\n');
                   turnController.abort();
                 } else {
                   process.exit(130);
@@ -257,7 +278,7 @@ program
               process.on('SIGINT', turnSigint);
 
               // Each REPL turn gets its own TUI, transcript, and cancel-aware execution.
-              const turnTui = (options.tui !== false && process.stderr.isTTY) ? startTui() : null;
+              const turnTui = (options.tui !== false && !quietMode && process.stderr.isTTY) ? startTui({ advisorLine }) : null;
               const turnTranscript = wantTranscript ? new TranscriptWriter(enrichedPrompt, transcriptMode) : null;
               const turnOnEvent = (e: WorkflowEvent) => {
                 turnTui?.onEvent(e);
