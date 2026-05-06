@@ -55,7 +55,6 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    let timedOutReason: 'inactivity' | 'hard_cap' | null = null;
     let cancelled = false;
     let inactivityTimer: NodeJS.Timeout;
     let killGraceTimer: NodeJS.Timeout | null = null;
@@ -87,20 +86,13 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
       clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(() => {
         timedOut = true;
-        timedOutReason = 'inactivity';
         killGroup('SIGKILL');
       }, inactivityMs);
     };
 
-    // Initial inactivity timer
+    // Initial inactivity timer. The inactivity timer is the only runtime cap —
+    // a hard cap above it would override the user's --timeout for buffered (JSON) engines.
     resetInactivityTimer();
-
-    // Also keep a max timeout as safety (5 minutes)
-    const maxTimeout = setTimeout(() => {
-      timedOut = true;
-      timedOutReason = 'hard_cap';
-      killGroup('SIGKILL');
-    }, 300000);
 
     child.stdout.on('data', (d) => {
       stdout += d;
@@ -115,7 +107,6 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
 
     child.on('close', (code) => {
       clearTimeout(inactivityTimer);
-      clearTimeout(maxTimeout);
       if (killGraceTimer) clearTimeout(killGraceTimer);
       if (signal) signal.removeEventListener('abort', onAbort);
       const durationMs = Date.now() - start;
@@ -139,15 +130,12 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
       );
 
       if (timedOut) {
-        const reason = timedOutReason === 'hard_cap'
-          ? `Hard cap timeout (5min max runtime)`
-          : `Inactivity timeout (no output for ${(inactivityMs / 1000).toFixed(0)}s — try --timeout <seconds> or set advisorInactivityMs in registry)`;
         return resolve({
           name,
           status: 'error',
           output: '',
           durationMs,
-          error: reason
+          error: `Inactivity timeout (no output for ${(inactivityMs / 1000).toFixed(0)}s — try --timeout <seconds> or set advisorInactivityMs in registry)`
         });
       }
 

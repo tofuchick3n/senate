@@ -69,11 +69,10 @@ Engines spawn with `detached: true` so `process.kill(-pid, sig)` terminates the 
 
 | Type | Default | Notes |
 |------|---------|-------|
-| Inactivity | `RunEngineOptions.inactivityMs` | Per-engine, from registry's `advisorInactivityMs` (claude=120s, gemini=120s, vibe=60s). Override globally with `senate --timeout <seconds>`. JSON-output engines need a longer value because the response is buffered until the model is done |
+| Inactivity | `RunEngineOptions.inactivityMs` | Per-engine, from registry's `advisorInactivityMs` (claude=120s, gemini=120s, vibe=60s). Override globally with `senate --timeout <seconds>`. JSON-output engines need a longer value because the response is buffered until the model is done — for those, the inactivity timer is effectively the total runtime budget |
 | Health-check inactivity | per-registry `healthCheckTimeoutMs` | Used by `senate --check-engines` |
-| Hard cap | 5 minutes | Maximum runtime regardless of activity |
 
-When the inactivity timer fires, the error message says `Inactivity timeout (no output for Ns — try --timeout <seconds> ...)` so it's distinguishable from a hard-cap timeout, a subprocess error, or a Ctrl-C cancel.
+When the inactivity timer fires, the error message says `Inactivity timeout (no output for Ns — try --timeout <seconds> ...)` so it's distinguishable from a subprocess error or a Ctrl-C cancel.
 
 ## Adding a new engine
 
