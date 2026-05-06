@@ -2,123 +2,176 @@
 
 ## Install & build
 
+Requires Node ≥ 18.
+
 ```bash
+git clone https://github.com/tofuchick3n/senate && cd senate
 npm install
 npm run build
 npm link
 ```
-After linking, `senate` is available on PATH. Alternatively, run directly:
+
+After linking, `senate` is on PATH. Or run directly:
+
 ```bash
 node dist/cli.js
 ```
 
-Each wrapped CLI (`claude`, `vibe`, `gemini`) must be installed and authenticated separately.
+Each wrapped CLI authenticates separately. Verify:
 
-## Quickstart
-
-Consult all advisors and synthesize:
-```bash
-senate "Explain the React hook useEffect"
-```
-```
-[consult] claude: <response>
-[consult] vibe: <response>
-[synthesis] <combined answer>
-```
-
-Consult advisors only (fastest):
-```bash
-senate --consult-only "Review this PR description"
-```
-```
-[consult] claude: <feedback>
-[consult] vibe: <feedback>
-```
-
-Execute only via vibe:
-```bash
-senate --execute-only "Write a script to parse CSV files"
-```
-```
-[execute] <code output>
-```
-
-Check available engines:
 ```bash
 senate --check-engines
 ```
-```
-claude: ✅ (authenticated)
-vibe: ✅ (authenticated)
-gemini: ❌ (binary not found)
-```
 
-## Modes
+## Default workflow
 
-By default, senate consults all selected advisors in parallel and synthesizes their responses (no orchestrator round-trip). Use `--smart` to let Claude decide whether to run consult and/or execute phases.
+Consults all selected advisors (`claude`, `vibe`) in parallel, synthesizes answers, prints to stdout. No orchestrator round-trip. No vibe execution.
 
-- **Default**: All advisors run in parallel; synthesis runs when ≥2 succeed.
-- **`--smart`**: Orchestrator-driven. Claude decides routing between consult and execute phases.
-- **`--consult-only`**: Only consult advisors. Implies `execute=false`. Skips orchestrator round-trip.
-- **`--execute-only`**: Only execute via vibe. Implies `consult=false`. Skips orchestrator round-trip.
-- **`--no-consult` / `--no-execute`**: Skip the respective phase without affecting the other.
-- **`--no-synthesis`**: Skip the synthesis step (returns raw advisor outputs).
+Use `--smart` to opt into orchestrator routing (Claude decides what to do).
+
+## Mode flags
+
+| Flag | Effect |
+|------|--------|
+| `[query]` | Positional; optional if stdin piped |
+| `--consult-only` | Consult only. Implies `execute=false`. Bypasses orchestrator |
+| `--execute-only` | Execute via vibe only. Implies `consult=false`. Bypasses orchestrator |
+| `--no-consult` | Skip consult phase |
+| `--no-execute` | Skip execute phase |
+| `--smart` | Orchestrator routing |
+| `-a, --advisors <list>` | Comma-separated. Default: `claude,vibe` |
+| `--no-synthesis` | Skip synthesis |
 
 ## Choosing advisors
 
-Select advisors with `-a, --advisors <list>` (comma-separated). Default: `claude,vibe`.
-
 ```bash
-senate -a claude,gemini "Analyze this architecture"
+senate -a claude,gemini "Your prompt"
 ```
 
-Advisor strengths:
-- **claude**: Deep reasoning, code review, architecture
-- **gemini**: Broad knowledge, multi-domain context
-- **vibe**: Local execution, file operations, CLI tasks
+Default: `claude,vibe`. Vibe provides execution-style answers.
+
+## Live dashboard
+
+In TTY: live per-advisor panel with spinner, elapsed time, status glyph on stderr. stdout stays clean. Auto-disables in machine modes/non-TTY/`--no-tui`.
+
+Footer: per-engine wall-clock, token counts (claude/gemini), cost (claude). Vibe: wall-clock only.
+
+## Conversation REPL
+
+```bash
+senate --repl "Initial prompt"
+```
+
+Drops into `senate>` REPL after first result. Commands:
+
+| Command | Effect |
+|---------|--------|
+| `/exit`, `/quit` | Exit REPL |
+| `/clear` | Drop context |
+| `/history` | List turns |
+
+Ctrl-C cancels current turn; second Ctrl-C exits. Skipped in machine modes/piped stdin/cancelled runs.
+
+## Transcripts
+
+Writes `~/.senate/sessions/<utc>-<seq>.jsonl` unless `--no-transcript`.
+
+Lines: `session_start` (prompt + mode), each `WorkflowEvent`, `session_end` (full `WorkflowResult`).
+
+```bash
+senate --list-sessions [count]  # Recent sessions, default 20
+senate --resume <ref>           # By index (0=newest) or path
+```
+
+## Pipeline use
+
+Stdin:
+
+```bash
+echo "query" | senate
+senate < spec.md
+senate "context:" < details.md
+```
+
+Prompt = `<positional>\n\n<stdin>`.
+
+JSON output:
+
+```bash
+senate "..." --json | jq .synthesis.structured.recommendation
+```
+
+Streaming:
+
+```bash
+senate "..." --json-stream
+```
+
+NDJSON events: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, final `{type:'result', result:...}`. Errors: `{type:'error', message:'...'}`. Mutually exclusive with `--json`.
+
+GitHub integration:
+
+```bash
+gh issue view 703 --json body --jq .body | senate "Review:"
+```
+
+## Bin overrides
+
+```bash
+SENATE_CLAUDE_BIN=/path/to/binary senate
+```
+
+Format: `SENATE_<NAME>_BIN=/path/to/binary`. Resolved at module load. Surfaced in `--list-engines` and `--check-engines`.
+
+## Cancellation
+
+First Ctrl-C: SIGTERM to in-flight engines, SIGKILL after 1s, kills subprocess group, prints partial results, exits 130.
+
+Second Ctrl-C: immediate exit.
+
+## Synthesis schema
+
+On `WorkflowResult.synthesis.structured`:
+
+```json
+{
+  "consensus": ["string"],
+  "disagreements": [
+    {
+      "topic": "string",
+      "positions": [
+        {"engine": "string", "stance": "string"}
+      ]
+    }
+  ],
+  "outliers": [
+    {"engine": "string", "note": "string"}
+  ],
+  "recommendation": "string"
+}
+```
+
+Prose rendering is deterministic. Falls back to raw output if JSON parse fails.
 
 ## Health checks
 
-| Flag | Action |
-|------|--------|
-| `--list-engines` | List configured engines |
-| `--check-engines` | Ping each engine to verify authentication |
-
-Common failure modes:
-- **Missing binary**: CLI not installed (`command not found`)
-- **Unauthenticated**: CLI installed but not logged in (auth error)
-- **Timeout**: Engine unresponsive after ping
+```bash
+senate --list-engines   # Name + resolved bin + override marker
+senate --check-engines  # Ping each, report auth state
+```
 
 ## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Error (missing engine, auth failure, execution error) |
+| 1 | Error |
+| 2 | Mutually-exclusive flag conflict |
+| 130 | Cancelled by Ctrl-C |
 
 ## Tips
 
-- Add repo/issue context directly in the query for better results
-- Pipe long context inline: `cat file.txt | xargs -0 senate --consult-only`
-- Use `--consult-only` for fastest feedback (no execution overhead)
-- Use `--verbose` to confirm active mode and selected advisors at startup
-
-## Pipeline use
-
-Stdin is supported in addition to positional arguments. When both are provided, they are concatenated as `<positional>\n\n<stdin>`.
-
-```bash
-echo "prompt" | senate
-senate < spec.md
-senate "context:" < details.md
-```
-
-Use `--json` to output the final `WorkflowResult` as a single JSON blob on stdout:
-
-```bash
-senate "..." --json | jq .synthesis.output
-```
-
-Use `--json-stream` for NDJSON events on stdout as they occur. Event types include: `orchestrator_done`, `consult_start`, `engine_done`, `consult_done`, `synthesis_start`, `synthesis_done`, `execute_start`, `execute_done`, plus a final `{type:'result', result:...}`. In machine modes (`--json` or `--json-stream`), progress chatter is silenced (no banner, no spinner, no section headers). Errors are emitted to stdout as `{type:'error', message:'...'}` for easy parsing.
-
-> **Note**: `--json` and `--json-stream` are mutually exclusive. Using both exits with code 2.
+- Default = consult-only with synthesis. Most sessions don't need `--smart`.
+- Machine pipelines: prefer `--json | jq` over `--json-stream`.
+- `--repl` uses transcripts: each turn = its own session file.
+- Specific advisors: `-a claude,gemini` skips vibe.
