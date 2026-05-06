@@ -55,6 +55,7 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let timedOutReason: 'inactivity' | 'hard_cap' | null = null;
     let cancelled = false;
     let inactivityTimer: NodeJS.Timeout;
     let killGraceTimer: NodeJS.Timeout | null = null;
@@ -86,6 +87,7 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
       clearTimeout(inactivityTimer);
       inactivityTimer = setTimeout(() => {
         timedOut = true;
+        timedOutReason = 'inactivity';
         killGroup('SIGKILL');
       }, inactivityMs);
     };
@@ -96,6 +98,7 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
     // Also keep a max timeout as safety (5 minutes)
     const maxTimeout = setTimeout(() => {
       timedOut = true;
+      timedOutReason = 'hard_cap';
       killGroup('SIGKILL');
     }, 300000);
 
@@ -136,12 +139,15 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
       );
 
       if (timedOut) {
+        const reason = timedOutReason === 'hard_cap'
+          ? `Hard cap timeout (5min max runtime)`
+          : `Inactivity timeout (no output for ${(inactivityMs / 1000).toFixed(0)}s — try --timeout <seconds> or set advisorInactivityMs in registry)`;
         return resolve({
           name,
           status: 'error',
           output: '',
           durationMs,
-          error: 'Timeout'
+          error: reason
         });
       }
 
