@@ -42,6 +42,6 @@ All twelve original roadmap items have shipped. See [CHANGELOG.md](../CHANGELOG.
 - **Tests for vibe usage parsing** — vibe is on text mode (no token counts); would need to test JSON-mode parsing if/when we adopt it.
 - **Resume-as-conversation** — `--resume` currently reprints; could re-enter REPL with the saved transcript as initial context.
 
-## Inspiration
+## Design notes
 
-Inspired by [council.armstr.ng](https://council.armstr.ng/) — senate is a local CLI tool that uses your existing LLM subscriptions without ranking or leaderboards.
+Senate is a local CLI that uses your existing LLM subscriptions. No API keys, no ranking, no leaderboard — just parallel consultation across the CLIs you already have authenticated, with a structured synthesis on top.
