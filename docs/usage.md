@@ -39,16 +39,19 @@ Use `--smart` to opt into orchestrator routing (Claude decides what to do).
 | `--no-consult` | Skip consult phase |
 | `--no-execute` | Skip execute phase |
 | `--smart` | Orchestrator routing |
-| `-a, --advisors <list>` | Comma-separated. Default: `claude,vibe` |
+| `-a, --advisors <list>` | Comma-separated. Default: `claude,gemini` |
 | `--no-synthesis` | Skip synthesis |
+| `--timeout <seconds>` | Per-advisor inactivity override (defaults: claude/gemini 120s, vibe 60s) |
 
 ## Choosing advisors
 
 ```bash
-senate -a claude,gemini "Your prompt"
+senate -a claude,gemini "Your prompt"        # default — two reasoners
+senate -a claude,vibe,gemini "Your prompt"   # add vibe as a third opinion
+senate -a claude "Your prompt"               # solo claude (no synthesis runs with <2)
 ```
 
-Default: `claude,vibe`. Vibe provides execution-style answers.
+Default is `claude,gemini`. Vibe is intentionally **not** in the default advisor set — it's the execution grunt for `--execute-only`, and its advisor-style responses tend to be less useful than claude/gemini for review/decision tasks. Add it explicitly with `-a` if you want a third opinion.
 
 ## Live dashboard
 

@@ -21,6 +21,7 @@ Senate spawns wrapped CLIs as child processes. Three engines are configured: **c
 | `inSynthesisPriority` | `boolean` | Eligible to lead synthesis; array order determines priority |
 | `inDefaultAdvisors` | `boolean` | Included in default `--advisors` |
 | `healthCheckTimeoutMs` | `number` | Inactivity timeout for `--check-engines` |
+| `advisorInactivityMs` | `number` | Inactivity timeout for advisor / synthesis-lead calls. JSON-output engines need a longer value because output is buffered until the model is done |
 | `env` | `Record<string, string> \| undefined` | Extra env vars merged into spawned process |
 
 ## Bin overrides
@@ -40,11 +41,13 @@ SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."
 
 ## Per-engine config
 
-| Engine | Bin | Args | Parse | parseUsage | Auth patterns | Synth priority | Default advisor | Env |
-|--------|-----|------|-------|------------|---------------|----------------|-----------------|-----|
-| **claude** | `claude` | `-p <prompt> --permission-mode bypassPermissions --output-format json` | `JSON.parse(stdout).result` | `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd` | `not logged in`, `please run /login`, `please run claude auth`, `authentication failed/required`, `not authenticated` | 1 (leads) | ✅ | — |
-| **vibe** | `vibe` | `-p <prompt> --output text` | Trim stdout | — | `please run vibe --setup`, `api key not found/not valid/not set/required`, generic auth failures | 2 | ✅ | — |
-| **gemini** | `gemini` | `-p <prompt> --skip-trust --output-format json` | Strip noise lines, parse `response` field | Sum `stats.models.<m>.tokens.{input,candidates,total}` | `must specify the gemini_api_key`, generic auth | 3 | ❌ | `GEMINI_CLI_TRUST_WORKSPACE=true` |
+| Engine | Args | Parse | parseUsage | Synth priority | Default advisor | Advisor timeout | Env |
+|--------|------|-------|------------|----------------|-----------------|-----------------|-----|
+| **claude** | `-p <prompt> --permission-mode bypassPermissions --output-format json` | `JSON.parse(stdout).result` | `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd` | 1 (leads) | ✅ | 120s | — |
+| **gemini** | `-p <prompt> --skip-trust --output-format json` | Strip noise lines, parse `response` field | Sum `stats.models.<m>.tokens.{input,candidates,total}` | 2 | ✅ | 120s | `GEMINI_CLI_TRUST_WORKSPACE=true` |
+| **vibe** | `-p <prompt> --output text` | Trim stdout | — (text mode doesn't surface tokens) | 3 (fallback only) | ❌ (execution grunt; opt-in via `-a`) | 60s | — |
+
+Vibe is intentionally not in the default advisor set: it's the executor for `--execute-only`, and its advisor-style responses tend to be less useful than claude/gemini for review/decision tasks. It stays in `inSynthesisPriority` only as a last-resort fallback if both claude and gemini are unavailable.
 
 ## Status semantics
 
@@ -66,8 +69,11 @@ Engines spawn with `detached: true` so `process.kill(-pid, sig)` terminates the 
 
 | Type | Default | Notes |
 |------|---------|-------|
-| Inactivity | `RunEngineOptions.inactivityMs` | 30s for advisor calls; per-registry for `--check-engines`; 60s for synthesis lead |
+| Inactivity | `RunEngineOptions.inactivityMs` | Per-engine, from registry's `advisorInactivityMs` (claude=120s, gemini=120s, vibe=60s). Override globally with `senate --timeout <seconds>`. JSON-output engines need a longer value because the response is buffered until the model is done |
+| Health-check inactivity | per-registry `healthCheckTimeoutMs` | Used by `senate --check-engines` |
 | Hard cap | 5 minutes | Maximum runtime regardless of activity |
+
+When the inactivity timer fires, the error message says `Inactivity timeout (no output for Ns — try --timeout <seconds> ...)` so it's distinguishable from a hard-cap timeout, a subprocess error, or a Ctrl-C cancel.
 
 ## Adding a new engine
 
@@ -88,7 +94,8 @@ entry({
   authPatterns: ['not logged in', 'authentication required'],
   inSynthesisPriority: true,
   inDefaultAdvisors: false,
-  healthCheckTimeoutMs: 15000
+  healthCheckTimeoutMs: 15000,
+  advisorInactivityMs: 120000   // JSON-output engines buffer; needs full-response budget
 })
 ```
 

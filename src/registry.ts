@@ -38,6 +38,16 @@ export type EngineEntry = {
   inDefaultAdvisors: boolean;
   /** Inactivity timeout used by `senate --check-engines` for this engine. Defaults vary because gemini's CLI is slow to cold-start (skill loading). */
   healthCheckTimeoutMs: number;
+  /**
+   * Inactivity timeout used during advisor calls (and synthesis when this engine leads).
+   *
+   * For text-streaming engines (vibe), the timer resets on every output chunk, so a relatively
+   * short value is fine. For JSON-output engines (claude, gemini) the entire response is
+   * buffered until the model is done — no chunks arrive mid-flight, so the inactivity timer
+   * effectively becomes a wall-clock timeout. Set to 120s for those so non-trivial reasoning
+   * prompts don't get killed at the time-to-first-output boundary.
+   */
+  advisorInactivityMs: number;
   /** Optional extra env vars merged into the spawned process env. */
   env?: Record<string, string>;
 };
@@ -129,6 +139,7 @@ export function parseGeminiJson(stdout: string): { text: string; usage?: EngineU
 /**
  * Engine registry. Order matters: it determines synthesis lead priority.
  * Claude is first because it produces the most reliable structured output.
+ * Vibe is the execution grunt — last in synthesis priority, NOT in default advisors.
  */
 const REGISTRY: EngineEntry[] = [
   entry({
@@ -147,26 +158,8 @@ const REGISTRY: EngineEntry[] = [
     ],
     inSynthesisPriority: true,
     inDefaultAdvisors: true,
-    healthCheckTimeoutMs: 15000
-  }),
-  entry({
-    name: 'vibe',
-    defaultBinName: 'vibe',
-    args: (p) => ['-p', p, '--output', 'text'],
-    parse: (stdout) => stdout.trim(),
-    authPatterns: [
-      'please run vibe --setup',
-      'api key not found',
-      'api key not valid',
-      'api key not set',
-      'api key required',
-      'authentication failed',
-      'authentication required',
-      'not authenticated'
-    ],
-    inSynthesisPriority: true,
-    inDefaultAdvisors: true,
-    healthCheckTimeoutMs: 15000
+    healthCheckTimeoutMs: 15000,
+    advisorInactivityMs: 120000  // JSON output buffers; needs full-response budget
   }),
   entry({
     name: 'gemini',
@@ -183,9 +176,33 @@ const REGISTRY: EngineEntry[] = [
       'not authenticated'
     ],
     inSynthesisPriority: true,
-    inDefaultAdvisors: false,
+    inDefaultAdvisors: true,    // promoted: vibe is execution-only; gemini is the second advisor
     healthCheckTimeoutMs: 30000,
+    advisorInactivityMs: 120000, // JSON output buffers; needs full-response budget
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
+  }),
+  entry({
+    name: 'vibe',
+    defaultBinName: 'vibe',
+    args: (p) => ['-p', p, '--output', 'text'],
+    parse: (stdout) => stdout.trim(),
+    authPatterns: [
+      'please run vibe --setup',
+      'api key not found',
+      'api key not valid',
+      'api key not set',
+      'api key required',
+      'authentication failed',
+      'authentication required',
+      'not authenticated'
+    ],
+    // vibe is the execution grunt, not an advisor. Opt in with `-a claude,vibe` if you want
+    // its opinion explicitly. Last in synthesis priority — only leads if both claude and
+    // gemini fail.
+    inSynthesisPriority: true,
+    inDefaultAdvisors: false,
+    healthCheckTimeoutMs: 15000,
+    advisorInactivityMs: 60000   // text-streaming, but be generous
   })
 ];
 

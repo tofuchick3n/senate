@@ -9,7 +9,7 @@
    ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
 ```
 
-A small CLI that asks two or three model CLIs the same question at once (claude and vibe by default; gemini is opt-in via `-a`), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
+A small CLI that asks two or three model CLIs the same question at once (claude and gemini by default; vibe is opt-in via `-a` since it's better as an executor than as an advisor), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
 
 ## How I use it
 
@@ -23,23 +23,22 @@ You don't need an "outer agent" to use it. It works fine as a one-shot CLI, a RE
 
 ```mermaid
 flowchart LR
-  P[your prompt] -->|positional or stdin| W[workflow]
-  W --> CO[consult]
+  P[your prompt] --> CO[consult in parallel]
   CO --> C1[claude]
-  CO --> C2[vibe]
-  CO --> C3[gemini]
+  CO --> C2[gemini]
   C1 --> S[synthesize]
   C2 --> S
-  C3 --> S
-  S -->|claude → vibe → gemini fallback| O[CONSENSUS<br/>DISAGREEMENTS<br/>OUTLIERS<br/>RECOMMENDATION]
+  S --> O["CONSENSUS / DISAGREEMENTS<br/>OUTLIERS / RECOMMENDATION"]
   O --> OUT[stdout]
-  W -.--smart.-> R[orchestrator<br/>Claude routes]
-  R --> CO
-  W -.opt-in.-> X[execute via vibe]
-  X --> OUT
 ```
 
-Default path: parallel consult → synthesize → print. No orchestrator round-trip, no execution. `--smart` adds the routing step; `--execute-only` (or letting the orchestrator decide) adds the vibe-runs-the-task step.
+Default path: parallel consult (claude + gemini) → synthesize → print. No orchestrator round-trip, no execution.
+
+Two opt-ins on top:
+
+- `--smart` adds a Claude routing step before the consult phase (the orchestrator decides whether to consult, execute, or both).
+- `--execute-only` (or letting the orchestrator pick it) runs the task via vibe instead of asking advisors.
+- `-a claude,gemini,vibe` adds vibe as a third advisor if you specifically want its take, but the design assumes vibe is the execution grunt and synthesis prefers claude → gemini → vibe in that order.
 
 ## Quickstart
 
@@ -246,7 +245,8 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--no-consult` | Skip consult phase |
 | `--no-execute` | Skip execute phase |
 | `--smart` | Opt into orchestrator routing (Claude decides what to do) |
-| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,vibe` |
+| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,gemini` |
+| `--timeout <seconds>` | Override per-advisor inactivity timeout (defaults: claude/gemini 120s, vibe 60s) |
 | `--no-synthesis` | Skip synthesis |
 | `--json` | Print final `WorkflowResult` as JSON to stdout |
 | `--json-stream` | NDJSON events on stdout. Mutex with `--json` |

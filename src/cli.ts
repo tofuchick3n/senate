@@ -37,6 +37,7 @@ program
   // Advisor selection
   .option('-a, --advisors <list>', 'Comma-separated list of advisors to consult', getDefaultAdvisors().join(','))
   .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
+  .option('--timeout <seconds>', 'Per-advisor inactivity timeout override (in seconds). Defaults: claude/gemini=120s, vibe=60s', (v) => parseInt(v, 10))
 
   // Output modes
   .option('--json', 'Print final result as a single JSON blob to stdout')
@@ -189,6 +190,11 @@ program
     };
     process.on('SIGINT', onSigint);
 
+    // --timeout is in seconds; convert to ms. Validates positive integer.
+    const advisorInactivityMs = (typeof options.timeout === 'number' && options.timeout > 0)
+      ? options.timeout * 1000
+      : undefined;
+
     const mode = {
       consult,
       execute,
@@ -198,7 +204,8 @@ program
       // Silence workflow.ts chatter when in machine modes (clean stdout) or when the TUI is showing the same info.
       quiet: workflowQuiet,
       onEvent,
-      signal: controller.signal
+      signal: controller.signal,
+      advisorInactivityMs
     };
 
     // Banner is for the static fallback path. The TUI has its own header.

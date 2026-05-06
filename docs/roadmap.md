@@ -22,7 +22,7 @@ All twelve original roadmap items have shipped. See [CHANGELOG.md](../CHANGELOG.
 ## Done
 
 1. **Parallel advisor execution** — `Promise.allSettled` for concurrent engine runs (#1).
-2. **Synthesis step** — Lead summarizer with fallback claude → vibe → gemini (#1, #3).
+2. **Synthesis step** — Lead summarizer with fallback claude → gemini → vibe (#1, #3).
 3. **Streaming TUI dashboard** — Live per-advisor panel with spinner, ticking elapsed, status glyph; auto-disables in machine modes / non-TTY (#9).
 4. **Conversation REPL** — `--repl` drops into a follow-up loop with prior turns kept as context; `/exit`, `/clear`, `/history` commands; per-turn AbortController (#10).
 5. **Structured output** — `--json`, `--json-stream` (NDJSON events) (#2).

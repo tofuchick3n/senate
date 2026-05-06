@@ -48,17 +48,18 @@ describe('resolveBin', () => {
 
 describe('registry contents', () => {
   it('lists exactly the three known engines', () => {
-    assert.deepEqual(listEngineNames(), ['claude', 'vibe', 'gemini']);
+    assert.deepEqual(listEngineNames(), ['claude', 'gemini', 'vibe']);
   });
 
-  it('default advisors are claude and vibe (gemini opt-in)', () => {
-    assert.deepEqual(getDefaultAdvisors(), ['claude', 'vibe']);
+  it('default advisors are claude and gemini (vibe is execution-only, opt-in advisor)', () => {
+    assert.deepEqual(getDefaultAdvisors(), ['claude', 'gemini']);
   });
 
-  it('synthesis priority places claude first', () => {
+  it('synthesis priority places claude first, vibe last (vibe is fallback only)', () => {
     const priority = getSynthesisPriority();
     assert.equal(priority[0], 'claude', 'claude must lead synthesis — best at structured output');
-    assert.deepEqual(priority, ['claude', 'vibe', 'gemini']);
+    assert.equal(priority[priority.length - 1], 'vibe', 'vibe is fallback only');
+    assert.deepEqual(priority, ['claude', 'gemini', 'vibe']);
   });
 
   it('returns undefined for unknown engine names', () => {
@@ -79,11 +80,31 @@ describe('registry contents', () => {
     assert.ok(args.includes('bypassPermissions'));
   });
 
-  it('gemini entry sets the trust-workspace env var', () => {
+  it('gemini entry sets the trust-workspace env var and is a default advisor', () => {
     const g = getEngineConfig('gemini');
     assert.ok(g);
     assert.equal(g!.env?.GEMINI_CLI_TRUST_WORKSPACE, 'true');
-    assert.equal(g!.inDefaultAdvisors, false, 'gemini stays out of the default advisors list');
+    assert.equal(g!.inDefaultAdvisors, true, 'gemini was promoted from opt-in to default advisor');
+  });
+
+  it('vibe is NOT in default advisors (execution grunt, not advisor)', () => {
+    const v = getEngineConfig('vibe');
+    assert.ok(v);
+    assert.equal(v!.inDefaultAdvisors, false);
+    assert.equal(v!.inSynthesisPriority, true, 'vibe still eligible to lead synthesis as last-resort fallback');
+  });
+
+  it('every engine has an advisorInactivityMs configured', () => {
+    for (const name of listEngineNames()) {
+      const e = getEngineConfig(name);
+      assert.ok(e);
+      assert.ok(e!.advisorInactivityMs > 0, `${name} must have a positive advisorInactivityMs`);
+    }
+  });
+
+  it('claude and gemini have generous advisor timeouts (JSON output buffers full response)', () => {
+    assert.ok(getEngineConfig('claude')!.advisorInactivityMs >= 60000);
+    assert.ok(getEngineConfig('gemini')!.advisorInactivityMs >= 60000);
   });
 });
 

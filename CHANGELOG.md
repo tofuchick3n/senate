@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- **Claude/gemini timing out at exactly 30s.** When PR #8 switched claude and gemini to `--output-format json` for token/cost extraction, their stdout became a single buffered blob — no incremental output to reset the inactivity timer. The hardcoded 30s default fired before the model finished. Per-engine `advisorInactivityMs` is now in the registry: claude=120s, gemini=120s (both buffer; need full-response budget), vibe=60s (text streams). Vibe was unaffected because it streams text.
+- Timeout error messages now distinguish inactivity vs. hard-cap and include the actual seconds + a hint to `--timeout`. Previously they all said `Timeout` without context.
+
+### Added (this round)
+- `--timeout <seconds>` flag — global override for per-advisor inactivity timeout.
+- `EngineEntry.advisorInactivityMs` — per-engine default. Configurable in `src/registry.ts`.
+- `RunOptions.advisorInactivityMs` — workflow-level override (used by the CLI flag).
+- `src/version.ts` — both `cli.ts`'s `.version()` and the banner now read from `package.json` at runtime. Bumping the version is one edit.
+
+### Changed (this round)
+- **Default advisors are now `claude,gemini`** (was `claude,vibe`). Vibe is the execution grunt for `--execute-only`, not an advisor — its review/decision responses tend to be less useful than claude/gemini. Add it explicitly with `-a claude,vibe,gemini` if you want a third opinion.
+- Synthesis priority is now `claude → gemini → vibe` (was `claude → vibe → gemini`). Vibe is last-resort fallback only.
+
 ### Added
 - Conversation REPL (#4). After the first result, `--repl` drops into a `senate>` prompt. Each follow-up turn is enriched with prior conversation context (using the synthesis recommendation when available, falling back to synthesis prose, then raw advisor outputs). REPL commands: `/exit`, `/quit`, `/clear` (drop context), `/history` (list prior turns). Each turn gets its own TUI panel and transcript file. Skipped automatically in machine modes, when stdin is piped, or after a cancelled run.
 - Live TUI dashboard (#3) via `log-update` (one new runtime dep, no React/JSX). Per-advisor row with animated spinner, ticking elapsed time, and status glyph. Synthesis + execute rows appear when those phases start. Auto-activates in human + TTY mode; auto-disables when stdout/stderr are piped, with `--json`/`--json-stream`, or with explicit `--no-tui`. Renders to stderr so the final result on stdout stays clean for piping.

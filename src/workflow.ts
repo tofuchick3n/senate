@@ -2,6 +2,7 @@ import { runEngine, type EngineResult } from './engines.js';
 import { getDecision, type Decision } from './orchestrator.js';
 import { synthesize, type SynthesisResult } from './synthesis.js';
 import { section, startSpinner } from './ui.js';
+import { getEngineConfig } from './registry.js';
 
 export type WorkflowResult = {
   decision: Decision;
@@ -33,6 +34,8 @@ export type RunOptions = {
   quiet?: boolean;
   onEvent?: (e: WorkflowEvent) => void;
   signal?: AbortSignal;
+  /** Override per-engine advisor inactivity timeout (in ms). When set, applies to all advisors uniformly. */
+  advisorInactivityMs?: number;
 };
 
 function defaultDecision(prompt: string, options: RunOptions): Decision {
@@ -85,7 +88,9 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
 
     const tasks = decision.advisors.map(async (name) => {
       const t0 = Date.now();
-      const result = await runEngine(name, prompt, { inactivityMs: 30000, stream: false, signal: options.signal });
+      const cfg = getEngineConfig(name);
+      const inactivityMs = options.advisorInactivityMs ?? cfg?.advisorInactivityMs ?? 30000;
+      const result = await runEngine(name, prompt, { inactivityMs, stream: false, signal: options.signal });
       settled.add(name);
       const elapsed = Date.now() - t0;
       const icon = result.status === 'ok' ? '✓' : '✗';
