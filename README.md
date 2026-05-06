@@ -9,7 +9,7 @@
    ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
 ```
 
-A small CLI that asks claude, vibe, and gemini the same question at once, then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
+A small CLI that asks two or three model CLIs the same question at once (claude and vibe by default; gemini is opt-in via `-a`), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
 
 ## How I use it
 
