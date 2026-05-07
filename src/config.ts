@@ -24,7 +24,7 @@ export function configPath(home: string = homedir()): string {
 
 /** Reads ~/.senate/config.json (preferred) or ~/.senate/config (fallback). Returns {} on any failure. */
 export function loadConfig(home: string = homedir()): SenateConfig {
-  const candidates = [join(home, '.senate', 'config.json'), join(home, '.senate', 'config')];
+  const candidates = [configPath(home), join(home, '.senate', 'config')];
   for (const path of candidates) {
     if (!existsSync(path)) continue;
     try {
