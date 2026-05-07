@@ -37,7 +37,7 @@ Key invariants future edits must preserve:
 
 - **Structured JSON is the synthesis source of truth.** `parseStructured` coerces partial/malformed JSON into safe defaults; `renderSynthesis` deterministically renders prose **from** the structured object. The human view and `--json` consumers must stay in sync because they share that source.
 
-- **JSON-buffered engines need long inactivity timeouts.** claude and gemini run with `--output-format json`, so stdout stays silent until the model finishes — the inactivity timer is effectively the full-response budget (claude/gemini = 120s, vibe text = 60s). Don't reintroduce a hard wall-clock cap (see commits 1fb6496, 2719191).
+- **JSON-buffered engines need long inactivity timeouts.** claude and gemini run with `--output-format json`, so stdout stays silent until the model finishes — the inactivity timer is effectively the full-response budget (claude/gemini = 240s, vibe text = 60s). Don't reintroduce a hard wall-clock cap (see commits 1fb6496, 2719191).
 
 - **Cancellation requires process-group kills.** Engines spawn with `detached: true` so `process.kill(-pid, SIGTERM)` then `SIGKILL` after 1s grace tears down the whole subtree. Some wrapped CLIs (gemini) ignore SIGTERM on the parent alone. First Ctrl-C aborts; second exits 130.
 

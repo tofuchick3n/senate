@@ -43,8 +43,8 @@ SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."
 
 | Engine | Args | Parse | parseUsage | Synth priority | Default advisor | Advisor timeout | Env |
 |--------|------|-------|------------|----------------|-----------------|-----------------|-----|
-| **claude** | `-p <prompt> --permission-mode bypassPermissions --output-format json` | `JSON.parse(stdout).result` | `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd` | 1 (leads) | ✅ | 120s | — |
-| **gemini** | `-p <prompt> --skip-trust --output-format json` | Strip noise lines, parse `response` field | Sum `stats.models.<m>.tokens.{input,candidates,total}` | 2 | ✅ | 120s | `GEMINI_CLI_TRUST_WORKSPACE=true` |
+| **claude** | `-p <prompt> --permission-mode bypassPermissions --output-format json` | `JSON.parse(stdout).result` | `usage.input_tokens`, `usage.output_tokens`, `total_cost_usd` | 1 (leads) | ✅ | 240s | — |
+| **gemini** | `-p <prompt> -m <SENATE_GEMINI_MODEL or gemini-3-flash-preview> --skip-trust --output-format json` | Strip noise lines, parse `response` field | Sum `stats.models.<m>.tokens.{input,candidates,total}` | 2 | ✅ | 240s | `GEMINI_CLI_TRUST_WORKSPACE=true` |
 | **vibe** | `-p <prompt> --output text` | Trim stdout | — (text mode doesn't surface tokens) | 3 (fallback only) | ❌ (execution grunt; opt-in via `-a`) | 60s | — |
 
 Vibe is intentionally not in the default advisor set: it's the executor for `--execute-only`, and its advisor-style responses tend to be less useful than claude/gemini for review/decision tasks. It stays in `inSynthesisPriority` only as a last-resort fallback if both claude and gemini are unavailable.
@@ -69,7 +69,7 @@ Engines spawn with `detached: true` so `process.kill(-pid, sig)` terminates the 
 
 | Type | Default | Notes |
 |------|---------|-------|
-| Inactivity | `RunEngineOptions.inactivityMs` | Per-engine, from registry's `advisorInactivityMs` (claude=120s, gemini=120s, vibe=60s). Override globally with `senate --timeout <seconds>`. JSON-output engines need a longer value because the response is buffered until the model is done — for those, the inactivity timer is effectively the total runtime budget |
+| Inactivity | `RunEngineOptions.inactivityMs` | Per-engine, from registry's `advisorInactivityMs` (claude=240s, gemini=240s, vibe=60s). Override globally with `senate --timeout <seconds>`. JSON-output engines need a longer value because the response is buffered until the model is done — for those, the inactivity timer is effectively the total runtime budget |
 | Health-check inactivity | per-registry `healthCheckTimeoutMs` | Used by `senate --check-engines` |
 
 When the inactivity timer fires, the error message says `Inactivity timeout (no output for Ns — try --timeout <seconds> ...)` so it's distinguishable from a subprocess error or a Ctrl-C cancel.
@@ -94,7 +94,7 @@ entry({
   inSynthesisPriority: true,
   inDefaultAdvisors: false,
   healthCheckTimeoutMs: 15000,
-  advisorInactivityMs: 120000   // JSON-output engines buffer; needs full-response budget
+  advisorInactivityMs: 240000   // JSON-output engines buffer; needs full-response budget
 })
 ```
 

@@ -259,7 +259,7 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--no-execute` | Skip execute phase |
 | `--smart` | Opt into orchestrator routing (Claude decides what to do) |
 | `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,gemini` |
-| `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=120s, gemini=10m, vibe=60s |
+| `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=240s, gemini=240s, vibe=60s |
 | `--no-synthesis` | Skip synthesis |
 | `--json` | Print final `WorkflowResult` as JSON to stdout |
 | `--json-stream` | NDJSON events on stdout. Mutex with `--json` |

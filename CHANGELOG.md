@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- **Default `advisorInactivityMs` bumped 120s → 240s** for claude and gemini. Real-world brainstorm-with-file-reads prompts on Flash 3 land around 170s, so 120s was too tight — 240s gives ~40% headroom on observed long cases while still failing fast on hung Pro calls (5–7 min). vibe stays at 60s (text-streaming, timer resets per chunk).
+
 ## [0.3.0] - 2026-05-07
 
 ### Changed
