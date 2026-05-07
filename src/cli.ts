@@ -34,6 +34,10 @@ function resolveBundledSkillDir(): string {
   return path.resolve(here, '..', 'skills', 'senate');
 }
 
+function getInstalledSkillDir(): string {
+  return path.join(os.homedir(), '.claude', 'skills', 'senate');
+}
+
 function installSkill(force: boolean): void {
   const src = resolveBundledSkillDir();
   if (!fs.existsSync(src) || !fs.existsSync(path.join(src, 'SKILL.md'))) {
@@ -41,21 +45,21 @@ function installSkill(force: boolean): void {
     console.error('This usually means the package was built without skills/. Reinstall or rebuild.');
     process.exit(1);
   }
-  const targetDir = path.join(os.homedir(), '.claude', 'skills', 'senate');
+  const targetDir = getInstalledSkillDir();
   if (fs.existsSync(targetDir) && !force) {
     console.error(`Skill already installed at ${targetDir}`);
     console.error('Use --force to overwrite, or --uninstall-skill first.');
     process.exit(1);
   }
   fs.mkdirSync(path.dirname(targetDir), { recursive: true });
-  if (fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.rmSync(targetDir, { recursive: true, force: true });
   fs.cpSync(src, targetDir, { recursive: true });
   console.log(`Installed senate skill to ${targetDir}`);
   console.log('Restart Claude Code (or run /skills) to pick it up.');
 }
 
 function uninstallSkill(): void {
-  const targetDir = path.join(os.homedir(), '.claude', 'skills', 'senate');
+  const targetDir = getInstalledSkillDir();
   if (!fs.existsSync(targetDir)) {
     console.log(`No skill installed at ${targetDir}`);
     return;
