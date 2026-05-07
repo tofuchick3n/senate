@@ -6,6 +6,21 @@
   "bin": {
     "senate": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tofuchick3n/senate.git"
+  },
+  "homepage": "https://github.com/tofuchick3n/senate#readme",
+  "bugs": {
+    "url": "https://github.com/tofuchick3n/senate/issues"
+  },
   "scripts": {
     "build": "tsc",
     "start": "tsx src/cli.ts",

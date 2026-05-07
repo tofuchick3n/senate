@@ -40,17 +40,26 @@ Two opt-ins on top:
 - `--execute-only` (or letting the orchestrator pick it) runs the task via vibe instead of asking advisors.
 - `-a claude,gemini,vibe` adds vibe as a third advisor if you specifically want its take, but the design assumes vibe is the execution grunt and synthesis prefers claude → gemini → vibe in that order.
 
-## Quickstart
+## Install
 
 ```bash
+# From npm (recommended once published)
+npm install -g senate
+
+# Or from source
 git clone https://github.com/tofuchick3n/senate
-cd senate
-npm install && npm run build && npm link
+cd senate && npm install && npm run build && npm link
+```
 
-# Each wrapped CLI authenticates separately.
+Each wrapped CLI (claude / gemini / vibe) authenticates separately — senate doesn't manage their credentials. Verify with:
+
+```bash
 senate --check-engines
+```
 
-# Try it.
+Try it:
+
+```bash
 senate "Should I use REST or GraphQL for an internal API?"
 ```
 
@@ -166,14 +175,17 @@ For the full set, run `senate --help`. The reference table is at the bottom.
 
 This repo ships a Claude Code skill at [`skills/senate/SKILL.md`](skills/senate/SKILL.md) that teaches an orchestrator agent when and how to consult senate (canonical invocation, the path-resolution gotcha, how to read the synthesis output).
 
-Install it once:
+Install (or update) it with the bundled command:
 
 ```bash
-mkdir -p ~/.claude/skills
-cp -r skills/senate ~/.claude/skills/
+senate --install-skill           # copies the bundled skill to ~/.claude/skills/senate
+senate --install-skill --force   # overwrite an existing install (after upgrading senate)
+senate --uninstall-skill         # remove it
 ```
 
-After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Update by re-copying after a `git pull`.
+After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Re-run `senate --install-skill --force` after `npm update -g senate` (or a `git pull` + `npm run build`) to pick up SKILL.md changes.
+
+> The skill isn't installed automatically on `npm install` — npm postinstall scripts are commonly disabled in CI / corporate environments, so the install is opt-in via the command above.
 
 ## Conversation REPL
 
@@ -303,6 +315,9 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--resume <ref>` | Reprint a saved session by index (0=newest) or path |
 | `--list-engines` | List configured engines + resolved bin paths |
 | `--check-engines` | Ping each engine to verify auth |
+| `--install-skill` | Copy the bundled Claude Code skill to `~/.claude/skills/senate` |
+| `--uninstall-skill` | Remove the skill from `~/.claude/skills/senate` |
+| `--force` | With `--install-skill`, overwrite an existing install |
 | `-v, --verbose` | Show mode/advisors at startup |
 
 ## Scripts
