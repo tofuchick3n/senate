@@ -44,7 +44,7 @@ export type EngineEntry = {
    * For text-streaming engines (vibe), the timer resets on every output chunk, so a relatively
    * short value is fine. For JSON-output engines (claude, gemini) the entire response is
    * buffered until the model is done — no chunks arrive mid-flight, so the inactivity timer
-   * effectively becomes a wall-clock timeout. Set to 120s for those so non-trivial reasoning
+   * effectively becomes a wall-clock timeout. Set to 240s for those so non-trivial reasoning
    * prompts don't get killed at the time-to-first-output boundary.
    */
   advisorInactivityMs: number;
@@ -159,7 +159,7 @@ const REGISTRY: EngineEntry[] = [
     inSynthesisPriority: true,
     inDefaultAdvisors: true,
     healthCheckTimeoutMs: 15000,
-    advisorInactivityMs: 120000  // JSON output buffers; needs full-response budget
+    advisorInactivityMs: 240000  // JSON output buffers; needs full-response budget
   }),
   entry({
     name: 'gemini',
@@ -186,9 +186,10 @@ const REGISTRY: EngineEntry[] = [
     inSynthesisPriority: true,
     inDefaultAdvisors: true,    // promoted: vibe is execution-only; gemini is the second advisor
     healthCheckTimeoutMs: 30000,
-    // 120s matches claude — Flash should respond well within this. If a user opts into Pro via
-    // SENATE_GEMINI_MODEL, they can extend with `--timeout 10m` per-run.
-    advisorInactivityMs: 120000,
+    // 240s matches claude. Real brainstorm-with-file-reads prompts on Flash 3 land around 170s,
+    // so 120s was too tight — bumped with ~40% headroom. If a user opts into Pro via
+    // SENATE_GEMINI_MODEL, they should pair it with `--timeout 10m`.
+    advisorInactivityMs: 240000,
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
   }),
   entry({
