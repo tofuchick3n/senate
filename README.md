@@ -209,7 +209,7 @@ Three wrapped CLIs. Each must be installed and authenticated independently:
 
 Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_VIBE_BIN`, `_GEMINI_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
 
-**Heads-up on gemini latency.** Gemini's CLI on long advisor prompts often runs 5–7 minutes. The default inactivity timeout is set to 10 minutes for that reason — if you're seeing premature timeouts on shorter prompts, override with `--timeout 2m` rather than relying on the wall clock.
+**Gemini model.** Senate pins gemini to `gemini-3-flash-preview` by default (Pro-tier reasoning, Flash latency) so advisor calls stay under ~2 min instead of the 5–7 min auto-router can incur on Pro. To opt back into Pro (or any other model), set `SENATE_GEMINI_MODEL=gemini-3.1-pro-preview` and pair it with `--timeout 10m`.
 
 ## Config file
 

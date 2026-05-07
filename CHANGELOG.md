@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+- **Gemini pinned to `gemini-3-flash-preview` by default** (was: gemini CLI's auto-router, which silently routed "complex" prompts to 3.1 Pro and ran 5–7 min per call, frequently hitting timeouts and burning quota on aborted generations). Flash 3 delivers Pro-tier reasoning at Flash latency — the right tradeoff for a *secondary* advisor where claude is the synthesis lead. Override with `SENATE_GEMINI_MODEL=<model-id>` (e.g. `gemini-3.1-pro-preview`) for users who want the deeper reasoning and don't mind the wall-clock cost.
+- **`gemini` advisor timeout dropped from 600s → 120s** (matches claude). Flash should respond well within this; users who opt back into Pro via `SENATE_GEMINI_MODEL` should pair it with `--timeout 10m`.
+
 ### Fixed
 - **Claude/gemini timing out at exactly 30s.** When PR #8 switched claude and gemini to `--output-format json` for token/cost extraction, their stdout became a single buffered blob — no incremental output to reset the inactivity timer. The hardcoded 30s default fired before the model finished. Per-engine `advisorInactivityMs` is now in the registry: claude=120s, gemini=120s (both buffer; need full-response budget), vibe=60s (text streams). Vibe was unaffected because it streams text.
 - Timeout error messages now distinguish inactivity vs. hard-cap and include the actual seconds + a hint to `--timeout`. Previously they all said `Timeout` without context.
