@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { installSkill, uninstallSkill, skillStatus } from './install-skill.js';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig, listEngineNames } from './registry.js';
@@ -27,45 +24,42 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8').trim();
 }
 
-function resolveBundledSkillDir(): string {
-  // cli.ts lives at src/cli.ts (dev) or dist/cli.js (built / npm-installed).
-  // In both layouts, the bundled skill is one level up from this file's dir.
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, '..', 'skills', 'senate');
-}
-
-function getInstalledSkillDir(): string {
-  return path.join(os.homedir(), '.claude', 'skills', 'senate');
-}
-
-function installSkill(force: boolean): void {
-  const src = resolveBundledSkillDir();
-  if (!fs.existsSync(src) || !fs.existsSync(path.join(src, 'SKILL.md'))) {
-    console.error(`Error: bundled skill not found at ${src}`);
-    console.error('This usually means the package was built without skills/. Reinstall or rebuild.');
+function runInstallSkill(force: boolean): void {
+  const result = installSkill({ force });
+  if (!result.ok) {
+    if (result.code === 'missing-bundle') {
+      console.error(`Error: bundled skill not found at ${result.sourceDir}`);
+      console.error('This usually means the package was built without skills/. Reinstall or rebuild.');
+    } else {
+      console.error(`Skill already installed at ${result.targetDir}`);
+      console.error('Use --force to overwrite, or --uninstall-skill first.');
+    }
     process.exit(1);
   }
-  const targetDir = getInstalledSkillDir();
-  if (fs.existsSync(targetDir) && !force) {
-    console.error(`Skill already installed at ${targetDir}`);
-    console.error('Use --force to overwrite, or --uninstall-skill first.');
-    process.exit(1);
-  }
-  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
-  fs.rmSync(targetDir, { recursive: true, force: true });
-  fs.cpSync(src, targetDir, { recursive: true });
-  console.log(`Installed senate skill to ${targetDir}`);
+  console.log(`${result.replaced ? 'Reinstalled' : 'Installed'} senate skill to ${result.targetDir}`);
   console.log('Restart Claude Code (or run /skills) to pick it up.');
 }
 
-function uninstallSkill(): void {
-  const targetDir = getInstalledSkillDir();
-  if (!fs.existsSync(targetDir)) {
-    console.log(`No skill installed at ${targetDir}`);
-    return;
+function runUninstallSkill(): void {
+  const { removed, targetDir } = uninstallSkill();
+  console.log(removed ? `Removed ${targetDir}` : `No skill installed at ${targetDir}`);
+}
+
+function runSkillStatus(): void {
+  const s = skillStatus();
+  console.log(`Bundled:   ${s.bundledDir}${s.bundledHash ? '' : ' (missing)'}`);
+  console.log(`Installed: ${s.installedDir}`);
+  switch (s.status) {
+    case 'absent':
+      console.log('Status:    not installed — run: senate --install-skill');
+      break;
+    case 'matches':
+      console.log('Status:    up to date');
+      break;
+    case 'differs':
+      console.log('Status:    differs from bundled — run: senate --install-skill --force');
+      break;
   }
-  fs.rmSync(targetDir, { recursive: true, force: true });
-  console.log(`Removed ${targetDir}`);
 }
 
 program
@@ -105,17 +99,23 @@ program
   .option('--check-engines', 'Check which engines are authenticated and exit')
   .option('--install-skill', 'Install the bundled Claude Code skill to ~/.claude/skills/senate')
   .option('--uninstall-skill', 'Remove the senate skill from ~/.claude/skills/senate')
+  .option('--skill-status', 'Show whether the installed skill is in sync with the bundled one')
   .option('--force', 'With --install-skill, overwrite an existing installation')
   .option('-v, --verbose', 'Show verbose output')
 
   .action(async (queryArg: string | undefined, options: any) => {
     if (options.installSkill) {
-      installSkill(Boolean(options.force));
+      runInstallSkill(Boolean(options.force));
       return;
     }
 
     if (options.uninstallSkill) {
-      uninstallSkill();
+      runUninstallSkill();
+      return;
+    }
+
+    if (options.skillStatus) {
+      runSkillStatus();
       return;
     }
 
