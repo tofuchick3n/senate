@@ -177,6 +177,15 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
   };
 }
 
+// True iff the run produced at least one usable output: a successful advisor,
+// a successful execution, or a synthesis. Used for both the empty-results
+// message in the formatter and the CLI's non-zero exit when nothing came back.
+export function hasAnyResult(result: WorkflowResult): boolean {
+  if (result.executionResult?.status === 'ok') return true;
+  if (result.advisorResults.some(r => r.status === 'ok')) return true;
+  return false;
+}
+
 export function formatWorkflowResult(result: WorkflowResult): string {
   const lines: string[] = [];
   const rule = '─'.repeat(60);
@@ -218,9 +227,12 @@ export function formatWorkflowResult(result: WorkflowResult): string {
     }
   }
 
-  if (!result.executionResult && !result.advisorResults.some(r => r.status === 'ok')) {
+  if (!hasAnyResult(result)) {
+    const tried = result.advisorResults.map(r => r.name).join(', ') || 'none';
     lines.push('');
-    lines.push('  No results. Check your CLI authentication and subscriptions.');
+    lines.push(`  No results — none of the advisor CLIs produced output (tried: ${tried}).`);
+    lines.push('  Run "senate --check-engines" to see which advisors are authenticated.');
+    lines.push('  Auth setup: https://github.com/tofuchick3n/senate#install');
   }
 
   lines.push('');

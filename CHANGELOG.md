@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-07
+
+### Fixed
+- **First-run UX with no engines authenticated** (closes part of #20). When every advisor fails (binary missing, auth failed, etc.), senate now exits with code **2** instead of 0 so pipelines and orchestrator agents see the failure. The empty-result message is now actionable: it lists the advisors that were tried and points users at `senate --check-engines` plus the README install section.
+- Extracted `hasAnyResult(result)` helper in `src/workflow.ts` (used by both the formatter and the CLI exit code) and added 6 unit tests covering the helper + the empty-result message.
+
 ## [0.4.1] - 2026-05-07
 
 ### Changed

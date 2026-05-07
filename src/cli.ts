@@ -2,7 +2,7 @@
 
 import { program } from 'commander';
 import { installSkill, uninstallSkill, skillStatus } from './install-skill.js';
-import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
+import { runWorkflow, formatWorkflowResult, hasAnyResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig, listEngineNames } from './registry.js';
 import { printBanner, formatAdvisorLine } from './ui.js';
@@ -306,6 +306,12 @@ program
       } else {
         console.log(formatWorkflowResult(result));
         if (transcript && !quietMode) console.log(`(saved to ${transcript.path})`);
+      }
+
+      // Exit non-zero when nothing came back so pipelines and orchestrator
+      // agents see the failure. 2 = "no results" (matches --check-engines).
+      if (!hasAnyResult(result) && !result.cancelled && !options.repl) {
+        process.exitCode = 2;
       }
 
       // REPL: only in human + interactive mode. Skip if cancelled, machine modes, or no TTY.
