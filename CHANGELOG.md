@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-07
+
+### Changed
+- **Renamed npm package to `senate-ai`** (was briefly `@tofuchick3n/senate@0.4.0`). The unscoped name `senate` was rejected by npm as too similar to the existing `slate` package; `senate-ai` is distinct enough to clear the similarity rule and reads cleanly as `npm install -g senate-ai`. The CLI binary is still `senate`, so invocation is unchanged. The scoped 0.4.0 release has been deprecated with a pointer to this name.
+
 ## [0.4.0] - 2026-05-07
 
 ### Added
@@ -18,7 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - README "Use from a Claude Code agent" section pointing to the new skill.
 
 ### Changed
-- **npm publish-ready.** `package.json` now has a `files` whitelist (`dist`, `skills`, `README.md`, `LICENSE`, `CHANGELOG.md`) so the tarball ships the skill alongside the binary. Added `repository`, `homepage`, `bugs` metadata. Install via `npm install -g senate`.
+- **npm publish-ready.** `package.json` now has a `files` whitelist (`dist`, `skills`, `README.md`, `LICENSE`, `CHANGELOG.md`) so the tarball ships the skill alongside the binary. Added `repository`, `homepage`, `bugs` metadata. Install via `npm install -g senate-ai` (see 0.4.1 for the rename note).
 - **Default `advisorInactivityMs` bumped 120s → 240s** for claude and gemini. Real-world brainstorm-with-file-reads prompts on Flash 3 land around 170s, so 120s was too tight — 240s gives ~40% headroom on observed long cases while still failing fast on hung Pro calls (5–7 min). vibe stays at 60s (text-streaming, timer resets per chunk).
 - `hashDir` (used by `--skill-status`) streams file bytes through `crypto.createHash` incrementally instead of reading every file as a hex string into memory. Memory is now O(largest single file) instead of O(total bundle × 2).
 
