@@ -43,7 +43,7 @@ Two opt-ins on top:
 ## Install
 
 ```bash
-# From npm (recommended once published)
+# From npm
 npm install -g senate
 
 # Or from source
@@ -180,10 +180,11 @@ Install (or update) it with the bundled command:
 ```bash
 senate --install-skill           # copies the bundled skill to ~/.claude/skills/senate
 senate --install-skill --force   # overwrite an existing install (after upgrading senate)
+senate --skill-status            # show whether the installed skill matches the bundled one
 senate --uninstall-skill         # remove it
 ```
 
-After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Re-run `senate --install-skill --force` after `npm update -g senate` (or a `git pull` + `npm run build`) to pick up SKILL.md changes.
+After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Run `senate --skill-status` after upgrading senate; if it reports `differs`, re-run `senate --install-skill --force` to pick up SKILL.md changes.
 
 > The skill isn't installed automatically on `npm install` — npm postinstall scripts are commonly disabled in CI / corporate environments, so the install is opt-in via the command above.
 
@@ -317,6 +318,7 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--check-engines` | Ping each engine to verify auth |
 | `--install-skill` | Copy the bundled Claude Code skill to `~/.claude/skills/senate` |
 | `--uninstall-skill` | Remove the skill from `~/.claude/skills/senate` |
+| `--skill-status` | Show whether the installed skill is in sync with the bundled one |
 | `--force` | With `--install-skill`, overwrite an existing install |
 | `-v, --verbose` | Show mode/advisors at startup |
 
