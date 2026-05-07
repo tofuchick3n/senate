@@ -164,7 +164,15 @@ const REGISTRY: EngineEntry[] = [
   entry({
     name: 'gemini',
     defaultBinName: 'gemini',
-    args: (p) => ['-p', p, '--skip-trust', '--output-format', 'json'],
+    // Pin to gemini-3-flash-preview by default — Pro-tier reasoning at Flash latency. Without `-m`
+    // the CLI's auto-router silently routes "complex" prompts to 3.1 Pro (5–7 min wall-clock),
+    // which is the wrong tradeoff for a *secondary* advisor where claude is already the synthesis
+    // lead. Power users can override via SENATE_GEMINI_MODEL=gemini-3.1-pro-preview (or any other
+    // model ID) to opt back into Pro.
+    args: (p) => {
+      const model = process.env.SENATE_GEMINI_MODEL?.trim() || 'gemini-3-flash-preview';
+      return ['-p', p, '-m', model, '--skip-trust', '--output-format', 'json'];
+    },
     parse: (stdout) => parseGeminiJson(stdout).text,
     parseUsage: (stdout) => parseGeminiJson(stdout).usage,
     authPatterns: [
@@ -178,11 +186,9 @@ const REGISTRY: EngineEntry[] = [
     inSynthesisPriority: true,
     inDefaultAdvisors: true,    // promoted: vibe is execution-only; gemini is the second advisor
     healthCheckTimeoutMs: 30000,
-    // Gemini's CLI buffers JSON output until completion AND its model latency on long prompts
-    // is genuinely high — real-world advisor calls routinely take 5–7 minutes. A 120s default
-    // would time out before completion for most users. 10 minutes gives headroom; users can
-    // still tighten with `--timeout 2m` if they're impatient.
-    advisorInactivityMs: 600000,
+    // 120s matches claude — Flash should respond well within this. If a user opts into Pro via
+    // SENATE_GEMINI_MODEL, they can extend with `--timeout 10m` per-run.
+    advisorInactivityMs: 120000,
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
   }),
   entry({
