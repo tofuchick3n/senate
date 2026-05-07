@@ -124,6 +124,17 @@ For "I have an issue and a written plan — does the plan actually solve the iss
 gh pr diff 42 | senate "Review for bugs, naming, and edge cases:"
 ```
 
+### Review your unstaged changes (`--diff`)
+
+```bash
+senate --diff                              # `git diff` of unstaged changes, default review prompt
+senate --diff "focus on the auth changes"  # same diff, narrower focus
+senate --diff path/to/patch.diff           # review a saved diff file
+gh pr diff 42 > /tmp/p.diff && senate --diff /tmp/p.diff "is this safe to merge?"
+```
+
+`--diff` packs the diff into the prompt with a sensible review framing, so you skip the `cat ... | senate "review this:"` pattern.
+
 ### Just the recommendation, machine-readable
 
 ```bash
@@ -303,6 +314,7 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--no-consult` | Skip consult phase |
 | `--no-execute` | Skip execute phase |
 | `--smart` | Opt into orchestrator routing (Claude decides what to do) |
+| `--diff [file]` | Review a diff. No arg → `git diff` (unstaged); with a file path → that file. Optional positional query becomes the review focus |
 | `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,gemini` |
 | `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=240s, gemini=240s, vibe=60s |
 | `--no-synthesis` | Skip synthesis |

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { installSkill, uninstallSkill, skillStatus } from './install-skill.js';
 import { runWorkflow, formatWorkflowResult, hasAnyResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
@@ -74,6 +76,7 @@ program
   .option('--no-consult', 'Skip advisor consultation')
   .option('--no-execute', 'Skip Vibe execution')
   .option('--smart', 'Let the orchestrator (Claude) decide whether to consult and/or execute')
+  .option('--diff [file]', 'Review a diff. With no arg runs `git diff` (unstaged changes); with a file path reads that file. Combines with an optional positional query as the review focus.')
 
   // Advisor selection. Default is resolved at runtime: ~/.senate/config.json `advisors`
   // field if present, otherwise the registry's default list. (Commander's static default
@@ -191,6 +194,34 @@ program
         query = query ? `${query}\n\n${stdinText}` : stdinText;
       }
     }
+
+    // --diff: review a file or `git diff` output. The value is `true` when no
+    // path is given (commander's optional-arg convention), or a string path.
+    if (options.diff !== undefined) {
+      const diffArg = typeof options.diff === 'string' ? options.diff : null;
+      let diffText: string;
+      let diffSource: string;
+      try {
+        if (diffArg) {
+          diffText = readFileSync(diffArg, 'utf8');
+          diffSource = diffArg;
+        } else {
+          // execFileSync (not exec) — no shell, no injection surface; args are a fixed array.
+          diffText = execFileSync('git', ['diff'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+          diffSource = 'git diff (unstaged)';
+        }
+      } catch (e: any) {
+        console.error(`Error: --diff: could not read ${diffArg || 'git diff'}: ${e.message}`);
+        process.exit(2);
+      }
+      if (!diffText.trim()) {
+        console.error(`Error: --diff: ${diffSource} is empty (nothing to review).`);
+        process.exit(2);
+      }
+      const reviewFocus = query || 'Review this diff for bugs, regressions, edge cases, unclear naming, and missing tests. Flag anything risky.';
+      query = `${reviewFocus}\n\n--- BEGIN DIFF (${diffSource}) ---\n${diffText}\n--- END DIFF ---`;
+    }
+
     if (!query) {
       program.help();
       return;

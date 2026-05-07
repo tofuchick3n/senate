@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasAnyResult, formatWorkflowResult, type WorkflowResult } from '../workflow.js';
+import { hasAnyResult, sumCostUsd, formatWorkflowResult, type WorkflowResult } from '../workflow.js';
 import type { EngineResult } from '../engines.js';
 
 const makeAdvisor = (name: string, status: EngineResult['status'], output = ''): EngineResult => ({
@@ -51,6 +51,47 @@ describe('hasAnyResult', () => {
       executionResult: makeAdvisor('vibe', 'error')
     };
     assert.equal(hasAnyResult(result), false);
+  });
+});
+
+describe('sumCostUsd', () => {
+  const withCost = (name: string, costUsd: number): EngineResult => ({
+    name, status: 'ok', output: '', durationMs: 1, usage: { costUsd }
+  });
+
+  it('returns null when no engine reported cost', () => {
+    const result: WorkflowResult = {
+      ...baseResult,
+      advisorResults: [makeAdvisor('claude', 'ok'), makeAdvisor('gemini', 'ok')]
+    };
+    assert.equal(sumCostUsd(result), null);
+  });
+
+  it('sums advisor costs', () => {
+    const result: WorkflowResult = {
+      ...baseResult,
+      advisorResults: [withCost('claude', 0.1234), withCost('gemini', 0.0050)]
+    };
+    const total = sumCostUsd(result);
+    assert.ok(total !== null && Math.abs(total - 0.1284) < 1e-9, `expected ~0.1284, got ${total}`);
+  });
+
+  it('includes execution cost', () => {
+    const result: WorkflowResult = {
+      ...baseResult,
+      advisorResults: [withCost('claude', 0.10)],
+      executionResult: withCost('vibe', 0.05)
+    };
+    const total = sumCostUsd(result);
+    assert.ok(total !== null && Math.abs(total - 0.15) < 1e-9, `expected ~0.15, got ${total}`);
+  });
+
+  it('skips engines with no cost but returns total of those that have it', () => {
+    const result: WorkflowResult = {
+      ...baseResult,
+      advisorResults: [withCost('claude', 0.20), makeAdvisor('gemini', 'ok')]
+    };
+    assert.equal(sumCostUsd(result), 0.20);
   });
 });
 
