@@ -1,6 +1,6 @@
 {
-  "name": "@tofuchick3n/senate",
-  "version": "0.4.0",
+  "name": "senate-ai",
+  "version": "0.4.1",
   "description": "Multi-model orchestration CLI — consult claude, vibe, gemini in parallel and synthesize their answers",
   "type": "module",
   "bin": {
