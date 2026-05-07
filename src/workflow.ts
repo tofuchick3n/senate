@@ -177,6 +177,15 @@ export async function runWorkflow(prompt: string, options: RunOptions = {}): Pro
   };
 }
 
+// True iff the run produced at least one usable output: a successful advisor,
+// a successful execution, or a synthesis. Used for both the empty-results
+// message in the formatter and the CLI's non-zero exit when nothing came back.
+export function hasAnyResult(result: WorkflowResult): boolean {
+  if (result.executionResult?.status === 'ok') return true;
+  if (result.advisorResults.some(r => r.status === 'ok')) return true;
+  return false;
+}
+
 export function formatWorkflowResult(result: WorkflowResult): string {
   const lines: string[] = [];
   const rule = '─'.repeat(60);
@@ -218,9 +227,12 @@ export function formatWorkflowResult(result: WorkflowResult): string {
     }
   }
 
-  if (!result.executionResult && !result.advisorResults.some(r => r.status === 'ok')) {
+  if (!hasAnyResult(result)) {
+    const tried = result.advisorResults.map(r => r.name).join(', ') || 'none';
     lines.push('');
-    lines.push('  No results. Check your CLI authentication and subscriptions.');
+    lines.push(`  No results — none of the advisor CLIs produced output (tried: ${tried}).`);
+    lines.push('  Run "senate --check-engines" to see which advisors are authenticated.');
+    lines.push('  Auth setup: https://github.com/tofuchick3n/senate#install');
   }
 
   lines.push('');
@@ -247,10 +259,27 @@ export function formatWorkflowResult(result: WorkflowResult): string {
     lines.push(`  ${'execute (vibe)'.padEnd(20)} ${formatElapsed(result.executionResult.durationMs).padStart(7)}`);
   }
   lines.push(`  ${'─'.repeat(20)} ${'─'.repeat(7)}`);
-  lines.push(`  ${'total'.padEnd(20)} ${formatElapsed(result.totalDurationMs).padStart(7)}`);
+  const totalCostUsd = sumCostUsd(result);
+  const totalLine = `  ${'total'.padEnd(20)} ${formatElapsed(result.totalDurationMs).padStart(7)}`;
+  lines.push(totalCostUsd != null ? `${totalLine}              $${totalCostUsd.toFixed(4)}` : totalLine);
   lines.push('');
 
   return lines.join('\n');
+}
+
+// Sum costUsd across advisors. Returns null if no engine reported a cost
+// (all gemini-only runs, vibe-only runs) so we don't show a misleading $0.0000.
+export function sumCostUsd(result: WorkflowResult): number | null {
+  let total = 0;
+  let any = false;
+  for (const r of result.advisorResults) {
+    if (r.usage?.costUsd != null) { total += r.usage.costUsd; any = true; }
+  }
+  if (result.executionResult?.usage?.costUsd != null) {
+    total += result.executionResult.usage.costUsd;
+    any = true;
+  }
+  return any ? total : null;
 }
 
 function formatElapsed(ms: number): string {

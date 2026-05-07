@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-07
+
+### Fixed
+- **First-run UX with no engines authenticated** (closes part of #20). When every advisor fails (binary missing, auth failed, etc.), senate now exits with code **2** instead of 0 so pipelines and orchestrator agents see the failure. The empty-result message is now actionable: it lists the advisors that were tried and points users at `senate --check-engines` plus the README install section.
+- Extracted `hasAnyResult(result)` helper in `src/workflow.ts` (used by both the formatter and the CLI exit code) and added 6 unit tests covering the helper + the empty-result message.
+
+### Added
+- **Author metadata.** `package.json` `author` field now points to Deian Isac (https://deianisac.com/), and the README has an Author section. Closes the empty-`author` half of #20.
+- **`--diff [file]` flag** (closes part of #20). Eats the most common `cat <file> | senate "review this:"` recipe. With no arg it pulls `git diff` (your unstaged changes); with a path it reads that file. An optional positional query becomes the review focus, otherwise senate uses a sensible default ("bugs, regressions, edge cases, unclear naming, missing tests"). Uses `execFileSync` (no shell) so there's no command-injection surface. Errors out with exit code 2 if the file is unreadable or the diff is empty. README has a recipe and a flag-table entry.
+- **Total cost rollup** in the USAGE footer (closes part of #20). When at least one engine reports `costUsd` (claude does; gemini/vibe currently don't), the total line gets a `$0.1775`-style rollup so consultations have a visible price tag. `sumCostUsd(result)` helper is exported and unit-tested (4 tests covering null / advisor-only / advisor+execution / partial-cost cases).
+
 ## [0.4.1] - 2026-05-07
 
 ### Changed
