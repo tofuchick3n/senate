@@ -11,6 +11,10 @@
 
 A small CLI that asks two or three model CLIs the same question at once (claude and gemini by default; vibe is opt-in via `-a` since it's better as an executor than as an advisor), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
 
+<p align="center">
+  <img src="assets/demo.svg" alt="senate demo — quick consult and --diff review" width="800">
+</p>
+
 ## How I use it
 
 My main agent is Claude Code (Opus). When it hits a real judgment call — "should this migration be one PR or three?", "is this auth model safe?", "are these tests covering the right thing?" — I have it shell out to `senate` for a second opinion. Two or three other models look at the same question, senate folds their answers into one report, and Claude Code reads that as part of deciding what to actually do.
