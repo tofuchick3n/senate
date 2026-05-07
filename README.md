@@ -44,7 +44,7 @@ Two opt-ins on top:
 
 ```bash
 # From npm
-npm install -g senate
+npm install -g @tofuchick3n/senate
 
 # Or from source
 git clone https://github.com/tofuchick3n/senate
