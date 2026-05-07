@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- `skills/senate/SKILL.md` — Claude Code skill that teaches orchestrator agents when and how to consult senate. Covers canonical invocation (`--consult-only --no-tui --quiet --timeout 10m`), the multi-source stdin pattern, the path-resolution gotcha, and how to read `synthesis.structured.recommendation` vs `disagreements`. Install with `cp -r skills/senate ~/.claude/skills/`.
+- README "Critique an implementation plan against its issue" recipe — multi-source stdin pattern for the common "issue + written plan, does the plan match" case.
+- README path-resolution heads-up under Recipes — call out absolute paths vs. piping stdin so users don't hit silent file-not-found inside spawned advisor CLIs.
+- README "Use from a Claude Code agent" section pointing to the new skill.
+
 ### Changed
 - **Default `advisorInactivityMs` bumped 120s → 240s** for claude and gemini. Real-world brainstorm-with-file-reads prompts on Flash 3 land around 170s, so 120s was too tight — 240s gives ~40% headroom on observed long cases while still failing fast on hung Pro calls (5–7 min). vibe stays at 60s (text-streaming, timer resets per chunk).
 

@@ -67,6 +67,8 @@ senate --list-sessions && senate --resume 0
 
 `senate --help` lists every flag, but it doesn't show how to compose with other tools. The patterns I actually use:
 
+> **Heads-up on file paths.** When you reference a file path *inside the prompt string*, use an absolute path. Each advisor CLI spawns as a child process and may not resolve relative paths the way your shell does. The cleanest workaround is what most recipes below do: **pipe content via stdin** instead of asking the advisors to read files themselves.
+
 ### Review a GitHub issue
 
 ```bash
@@ -89,6 +91,23 @@ gh issue view 703 --repo OWNER/REPO --json title,body,comments \
   cat src/relevant/file.ts
 } | senate --consult-only "Review this in light of the existing code:"
 ```
+
+### Critique an implementation plan against its issue
+
+For "I have an issue and a written plan — does the plan actually solve the issue?":
+
+```bash
+{ gh issue view 452 --repo OWNER/REPO --json title,body \
+    --jq '"# ISSUE\n\n# \(.title)\n\n\(.body)"'
+  echo
+  echo "# IMPLEMENTATION PLAN"
+  echo
+  cat plans/issue-452-the-plan.md
+} | senate --consult-only --no-tui --quiet --timeout 10m \
+    "Critique the plan against the issue. Cover tradeoffs, retry/dedup, observability, failure modes."
+```
+
+`--no-tui --quiet` makes stdout the synthesis only — clean for piping into a file, `pbcopy`, or `jq`.
 
 ### Pipe a PR diff
 
@@ -142,6 +161,19 @@ senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
 | Final result only (no progress chatter) | `--quiet` |
 
 For the full set, run `senate --help`. The reference table is at the bottom.
+
+## Use from a Claude Code agent
+
+This repo ships a Claude Code skill at [`skills/senate/SKILL.md`](skills/senate/SKILL.md) that teaches an orchestrator agent when and how to consult senate (canonical invocation, the path-resolution gotcha, how to read the synthesis output).
+
+Install it once:
+
+```bash
+mkdir -p ~/.claude/skills
+cp -r skills/senate ~/.claude/skills/
+```
+
+After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Update by re-copying after a `git pull`.
 
 ## Conversation REPL
 

@@ -41,7 +41,7 @@ program
   // would shadow the config file, so we leave it undefined and resolve in the action.)
   .option('-a, --advisors <list>', `Comma-separated advisors. Default: ~/.senate/config.json or ${getDefaultAdvisors().join(',')}`)
   .option('--no-synthesis', 'Skip the synthesis step after advisors respond')
-  .option('--timeout <duration>', 'Per-advisor inactivity timeout. Accepts 600, 600s, 10m, 1h, 1500ms. Defaults: claude=120s, gemini=10m, vibe=60s')
+  .option('--timeout <duration>', 'Per-advisor inactivity timeout. Accepts 600, 600s, 10m, 1h, 1500ms. Defaults: claude=240s, gemini=240s, vibe=60s')
 
   // Output modes
   .option('--json', 'Print final result as a single JSON blob to stdout')
