@@ -20,9 +20,10 @@ Call senate **before** committing to an approach on:
 ## When NOT to use it
 
 - Questions you can answer from the codebase or your own context (waste of tokens + wall-clock)
-- Pure code generation (senate doesn't write code; it consults)
 - Time-sensitive single-step actions (each call is 30s–3min)
 - Anything where the answer is "just look at the file"
+
+> **Code generation note.** This skill is consult-only — that's the orchestrator-agent use case. If you specifically want senate to *execute* a task via vibe (e.g. mechanical refactor, codemod, fixture generation) instead of advising on it, you can hand off with `senate --execute-only "..."` or let `--smart` route between consult and execute. Don't reach for that during a normal "give me a second opinion" call; it's a different mode.
 
 ## Canonical invocation
 

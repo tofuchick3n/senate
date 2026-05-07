@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import { program } from 'commander';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { runWorkflow, formatWorkflowResult, type WorkflowResult, type WorkflowEvent } from './workflow.js';
 import { listEngines, checkEngines } from './engines.js';
 import { getDefaultAdvisors, listEngineEntries, getEngineConfig, listEngineNames } from './registry.js';
@@ -21,6 +25,43 @@ async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+function resolveBundledSkillDir(): string {
+  // cli.ts lives at src/cli.ts (dev) or dist/cli.js (built / npm-installed).
+  // In both layouts, the bundled skill is one level up from this file's dir.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(here, '..', 'skills', 'senate');
+}
+
+function installSkill(force: boolean): void {
+  const src = resolveBundledSkillDir();
+  if (!fs.existsSync(src) || !fs.existsSync(path.join(src, 'SKILL.md'))) {
+    console.error(`Error: bundled skill not found at ${src}`);
+    console.error('This usually means the package was built without skills/. Reinstall or rebuild.');
+    process.exit(1);
+  }
+  const targetDir = path.join(os.homedir(), '.claude', 'skills', 'senate');
+  if (fs.existsSync(targetDir) && !force) {
+    console.error(`Skill already installed at ${targetDir}`);
+    console.error('Use --force to overwrite, or --uninstall-skill first.');
+    process.exit(1);
+  }
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  if (fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
+  fs.cpSync(src, targetDir, { recursive: true });
+  console.log(`Installed senate skill to ${targetDir}`);
+  console.log('Restart Claude Code (or run /skills) to pick it up.');
+}
+
+function uninstallSkill(): void {
+  const targetDir = path.join(os.homedir(), '.claude', 'skills', 'senate');
+  if (!fs.existsSync(targetDir)) {
+    console.log(`No skill installed at ${targetDir}`);
+    return;
+  }
+  fs.rmSync(targetDir, { recursive: true, force: true });
+  console.log(`Removed ${targetDir}`);
 }
 
 program
@@ -58,9 +99,22 @@ program
   // Utility
   .option('--list-engines', 'List available engines and exit')
   .option('--check-engines', 'Check which engines are authenticated and exit')
+  .option('--install-skill', 'Install the bundled Claude Code skill to ~/.claude/skills/senate')
+  .option('--uninstall-skill', 'Remove the senate skill from ~/.claude/skills/senate')
+  .option('--force', 'With --install-skill, overwrite an existing installation')
   .option('-v, --verbose', 'Show verbose output')
 
   .action(async (queryArg: string | undefined, options: any) => {
+    if (options.installSkill) {
+      installSkill(Boolean(options.force));
+      return;
+    }
+
+    if (options.uninstallSkill) {
+      uninstallSkill();
+      return;
+    }
+
     if (options.listEngines) {
       console.log('Configured engines:');
       for (const e of listEngineEntries()) {
