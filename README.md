@@ -333,6 +333,12 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 
 For internals, see [`docs/architecture.md`](docs/architecture.md), [`docs/engines.md`](docs/engines.md), [`docs/usage.md`](docs/usage.md), and [`docs/roadmap.md`](docs/roadmap.md).
 
+## Author
+
+Built by **Deian Isac** — [deianisac.com](https://deianisac.com/) ([@tofuchick3n](https://github.com/tofuchick3n) on GitHub).
+
+Issues, ideas, and PRs welcome at [github.com/tofuchick3n/senate](https://github.com/tofuchick3n/senate).
+
 ## License
 
 MIT

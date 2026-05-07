@@ -40,7 +40,10 @@
     "orchestration",
     "cli"
   ],
-  "author": "",
+  "author": {
+    "name": "Deian Isac",
+    "url": "https://deianisac.com/"
+  },
   "license": "MIT",
   "dependencies": {
     "commander": "^12.0.0",
