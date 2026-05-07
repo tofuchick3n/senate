@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-07
+
 ### Changed
 - **Gemini pinned to `gemini-3-flash-preview` by default** (was: gemini CLI's auto-router, which silently routed "complex" prompts to 3.1 Pro and ran 5–7 min per call, frequently hitting timeouts and burning quota on aborted generations). Flash 3 delivers Pro-tier reasoning at Flash latency — the right tradeoff for a *secondary* advisor where claude is the synthesis lead. Override with `SENATE_GEMINI_MODEL=<model-id>` (e.g. `gemini-3.1-pro-preview`) for users who want the deeper reasoning and don't mind the wall-clock cost.
 - **`gemini` advisor timeout dropped from 600s → 120s** (matches claude). Flash should respond well within this; users who opt back into Pro via `SENATE_GEMINI_MODEL` should pair it with `--timeout 10m`.

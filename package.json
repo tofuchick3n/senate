@@ -1,6 +1,6 @@
 {
   "name": "senate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Multi-model orchestration CLI — consult claude, vibe, gemini in parallel and synthesize their answers",
   "type": "module",
   "bin": {
