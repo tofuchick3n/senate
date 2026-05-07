@@ -6,14 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-07
+
 ### Added
-- `skills/senate/SKILL.md` — Claude Code skill that teaches orchestrator agents when and how to consult senate. Covers canonical invocation (`--consult-only --no-tui --quiet --timeout 10m`), the multi-source stdin pattern, the path-resolution gotcha, and how to read `synthesis.structured.recommendation` vs `disagreements`. Install with `cp -r skills/senate ~/.claude/skills/`.
+- **`senate --install-skill` / `--uninstall-skill` / `--skill-status`** — manage the bundled Claude Code skill from the CLI. `--install-skill` copies `skills/senate/` into `~/.claude/skills/senate/` (with `--force` to overwrite); `--skill-status` sha256s both trees and reports `absent` / `matches` / `differs` so users know whether to re-run after upgrading senate. Replaces the manual `cp -r` step that broke when run from the wrong cwd. No npm postinstall hook — those are commonly disabled in CI/corporate environments.
+- `src/install-skill.ts` — extracted install/uninstall/status logic with a `home` option for testability. cli.ts holds only thin wrappers.
+- 9 unit tests for install / uninstall / status × happy + edge paths, using `mkdtempSync` HOMEs so they don't touch the real `~/.claude`.
+- `skills/senate/SKILL.md` — Claude Code skill that teaches orchestrator agents when and how to consult senate. Covers canonical invocation (`--consult-only --no-tui --quiet --timeout 10m`), the multi-source stdin pattern, the path-resolution gotcha, and how to read `synthesis.structured.recommendation` vs `disagreements`.
 - README "Critique an implementation plan against its issue" recipe — multi-source stdin pattern for the common "issue + written plan, does the plan match" case.
 - README path-resolution heads-up under Recipes — call out absolute paths vs. piping stdin so users don't hit silent file-not-found inside spawned advisor CLIs.
 - README "Use from a Claude Code agent" section pointing to the new skill.
 
 ### Changed
+- **npm publish-ready.** `package.json` now has a `files` whitelist (`dist`, `skills`, `README.md`, `LICENSE`, `CHANGELOG.md`) so the tarball ships the skill alongside the binary. Added `repository`, `homepage`, `bugs` metadata. Install via `npm install -g senate`.
 - **Default `advisorInactivityMs` bumped 120s → 240s** for claude and gemini. Real-world brainstorm-with-file-reads prompts on Flash 3 land around 170s, so 120s was too tight — 240s gives ~40% headroom on observed long cases while still failing fast on hung Pro calls (5–7 min). vibe stays at 60s (text-streaming, timer resets per chunk).
+- `hashDir` (used by `--skill-status`) streams file bytes through `crypto.createHash` incrementally instead of reading every file as a hex string into memory. Memory is now O(largest single file) instead of O(total bundle × 2).
 
 ## [0.3.0] - 2026-05-07
 
