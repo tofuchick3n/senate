@@ -178,7 +178,11 @@ const REGISTRY: EngineEntry[] = [
     inSynthesisPriority: true,
     inDefaultAdvisors: true,    // promoted: vibe is execution-only; gemini is the second advisor
     healthCheckTimeoutMs: 30000,
-    advisorInactivityMs: 120000, // JSON output buffers; needs full-response budget
+    // Gemini's CLI buffers JSON output until completion AND its model latency on long prompts
+    // is genuinely high — real-world advisor calls routinely take 5–7 minutes. A 120s default
+    // would time out before completion for most users. 10 minutes gives headroom; users can
+    // still tighten with `--timeout 2m` if they're impatient.
+    advisorInactivityMs: 600000,
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
   }),
   entry({

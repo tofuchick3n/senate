@@ -50,7 +50,12 @@ export type TuiHandle = {
   stop: (result?: WorkflowResult) => void;
 };
 
-export function startTui(): TuiHandle {
+export type TuiOptions = {
+  /** One-line advisor summary rendered in the dashboard header (e.g. from `formatAdvisorLine`). Optional. */
+  advisorLine?: string;
+};
+
+export function startTui(opts: TuiOptions = {}): TuiHandle {
   const advisors = new Map<string, AdvisorState>();
   let synth: SynthState = { status: 'skipped' };
   let exec: ExecState = { status: 'skipped' };
@@ -89,6 +94,7 @@ export function startTui(): TuiHandle {
   function build(): string {
     const lines: string[] = [];
     lines.push('SENATE');
+    if (opts.advisorLine) lines.push(`  ${opts.advisorLine}`);
 
     if (phase === 'decide') {
       lines.push(`  ${FRAMES[frameIdx % FRAMES.length]} preparing...`);

@@ -139,6 +139,7 @@ senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
 | Machine output | `--json` or `--json-stream` |
 | Don't save this session | `--no-transcript` |
 | Hide the live dashboard | `--no-tui` |
+| Final result only (no progress chatter) | `--quiet` |
 
 For the full set, run `senate --help`. The reference table is at the bottom.
 
@@ -208,6 +209,18 @@ Three wrapped CLIs. Each must be installed and authenticated independently:
 
 Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_VIBE_BIN`, `_GEMINI_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
 
+**Heads-up on gemini latency.** Gemini's CLI on long advisor prompts often runs 5–7 minutes. The default inactivity timeout is set to 10 minutes for that reason — if you're seeing premature timeouts on shorter prompts, override with `--timeout 2m` rather than relying on the wall clock.
+
+## Config file
+
+`senate` reads `~/.senate/config.json` at startup. Currently one field is honored:
+
+```json
+{ "advisors": ["claude", "vibe", "gemini"] }
+```
+
+When the config file defines `advisors`, it becomes the default for `-a` so you don't have to retype the list. Pass `-a` on the CLI to override per-run. If no config file exists, the registry default (`claude,gemini`) is used.
+
 ## Cancellation (Ctrl-C)
 
 First Ctrl-C cancels in-flight engines (SIGTERM, then SIGKILL after 1s grace; kills the whole subprocess group), prints whatever finished, exits 130. Second Ctrl-C: immediate exit.
@@ -246,11 +259,12 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--no-execute` | Skip execute phase |
 | `--smart` | Opt into orchestrator routing (Claude decides what to do) |
 | `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,gemini` |
-| `--timeout <seconds>` | Override per-advisor inactivity timeout (defaults: claude/gemini 120s, vibe 60s) |
+| `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=120s, gemini=10m, vibe=60s |
 | `--no-synthesis` | Skip synthesis |
 | `--json` | Print final `WorkflowResult` as JSON to stdout |
 | `--json-stream` | NDJSON events on stdout. Mutex with `--json` |
 | `--no-tui` | Disable the live dashboard |
+| `--quiet` | Suppress banner, dashboard, settle lines, save footer — final result only (good for scripts) |
 | `--repl` | Drop into a `senate>` REPL after the first result |
 | `--no-transcript` | Don't persist this session |
 | `--list-sessions [count]` | List recent saved sessions (default 20) |
