@@ -22,17 +22,24 @@ export function getInstalledSkillDir(home: string = os.homedir()): string {
 
 function hashDir(dir: string): string {
   // Stable content hash across all files in the directory tree.
-  const entries: string[] = [];
+  // Stream file bytes through the hash incrementally so this stays
+  // O(1) memory regardless of bundle size.
+  const hash = crypto.createHash('sha256');
   const walk = (d: string, rel: string) => {
     for (const name of fs.readdirSync(d).sort()) {
       const full = path.join(d, name);
       const stat = fs.statSync(full);
-      if (stat.isDirectory()) walk(full, path.join(rel, name));
-      else entries.push(`${path.join(rel, name)}\0${fs.readFileSync(full).toString('hex')}`);
+      const relPath = path.join(rel, name);
+      if (stat.isDirectory()) walk(full, relPath);
+      else {
+        hash.update(relPath + '\0');
+        hash.update(fs.readFileSync(full));
+        hash.update('\n');
+      }
     }
   };
   walk(dir, '');
-  return crypto.createHash('sha256').update(entries.join('\n')).digest('hex');
+  return hash.digest('hex');
 }
 
 export type InstallResult =
