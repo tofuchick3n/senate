@@ -133,7 +133,7 @@ gh pr diff 42 | senate --consult-only --no-tui --quiet \
 
 - **`Timeout`** with a hint to `--timeout` — bump it. Default is sized for short reviews; brainstorms or file-reading prompts may need 5–10 min. If it times out repeatedly even with `--timeout 10m`, you're probably hitting the gemini Pro path; try Flash 3 (the default) or check `SENATE_GEMINI_MODEL`.
 - **`auth required`** — a wrapped CLI (claude/gemini/vibe) isn't authenticated. The user needs to run that CLI's login flow once; senate doesn't manage auth itself.
-- **`synthesis: null`** — all synthesis-lead candidates failed (claude → gemini → vibe). The raw advisor outputs are still in `engineResults[]`. Fall back to reading those directly.
+- **`synthesis: null`** — all synthesis-lead candidates failed (claude → gemini → vibe). The raw advisor outputs are still in `advisorResults[]`. Fall back to reading those directly.
 - **Empty / truncated output** — likely the prompt was too long for the model's context window. Trim or split.
 
 ## Don'ts
