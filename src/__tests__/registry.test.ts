@@ -94,6 +94,15 @@ describe('registry contents', () => {
     assert.equal(v!.inSynthesisPriority, true, 'vibe still eligible to lead synthesis as last-resort fallback');
   });
 
+  it('vibe args carry the runaway-loop guards (max-turns, max-price, trust)', () => {
+    const args = getEngineConfig('vibe')!.args('hi');
+    assert.ok(args.includes('--trust'), 'vibe must skip the trust prompt — stdin is closed');
+    const tIdx = args.indexOf('--max-turns');
+    assert.ok(tIdx !== -1 && args[tIdx + 1], '--max-turns must be set with a value');
+    const pIdx = args.indexOf('--max-price');
+    assert.ok(pIdx !== -1 && args[pIdx + 1], '--max-price must be set with a value');
+  });
+
   it('every engine has an advisorInactivityMs configured', () => {
     for (const name of listEngineNames()) {
       const e = getEngineConfig(name);
