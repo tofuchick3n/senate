@@ -195,7 +195,15 @@ const REGISTRY: EngineEntry[] = [
   entry({
     name: 'vibe',
     defaultBinName: 'vibe',
-    args: (p) => ['-p', p, '--output', 'text'],
+    // `-p` runs vibe in programmatic mode with the auto-approve agent (per `vibe --help`),
+    // which can multi-turn its way through tool calls until something stops it. Without bounds,
+    // an opinion call could quietly turn into a 20-turn read/grep loop that blows our 60s
+    // inactivity budget and burns Mistral credits. `--max-turns` + `--max-price` are the
+    // documented guards (see the vibe-delegate skill). `--trust` skips the trust prompt so
+    // vibe never blocks waiting on stdin when senate runs in a directory that hasn't been
+    // accepted yet. Numbers match the upper end of the vibe-delegate skill's recommended caps
+    // (TDD feature tier) so they don't tighten normal use — they just prevent runaway loops.
+    args: (p) => ['-p', p, '--output', 'text', '--trust', '--max-turns', '25', '--max-price', '1.00'],
     parse: (stdout) => stdout.trim(),
     authPatterns: [
       'please run vibe --setup',
