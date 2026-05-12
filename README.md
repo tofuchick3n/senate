@@ -72,6 +72,23 @@ senate --repl "First question — let's talk about it"
 senate --list-sessions && senate --resume 0
 ```
 
+## Use from a Claude Code agent
+
+This repo ships a Claude Code skill at [`skills/senate/SKILL.md`](skills/senate/SKILL.md) that teaches an orchestrator agent when and how to consult senate (canonical invocation, the path-resolution gotcha, how to read the synthesis output).
+
+Install (or update) it with the bundled command:
+
+```bash
+senate --install-skill           # copies the bundled skill to ~/.claude/skills/senate
+senate --install-skill --force   # overwrite an existing install (after upgrading senate)
+senate --skill-status            # show whether the installed skill matches the bundled one
+senate --uninstall-skill         # remove it
+```
+
+After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Run `senate --skill-status` after upgrading senate; if it reports `differs`, re-run `senate --install-skill --force` to pick up SKILL.md changes.
+
+> The skill isn't installed automatically on `npm install` — npm postinstall scripts are commonly disabled in CI / corporate environments, so the install is opt-in via the command above.
+
 ## Recipes
 
 `senate --help` lists every flag, but it doesn't show how to compose with other tools. The patterns I actually use:
@@ -182,23 +199,6 @@ senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
 
 For the full set, run `senate --help`. The reference table is at the bottom.
 
-## Use from a Claude Code agent
-
-This repo ships a Claude Code skill at [`skills/senate/SKILL.md`](skills/senate/SKILL.md) that teaches an orchestrator agent when and how to consult senate (canonical invocation, the path-resolution gotcha, how to read the synthesis output).
-
-Install (or update) it with the bundled command:
-
-```bash
-senate --install-skill           # copies the bundled skill to ~/.claude/skills/senate
-senate --install-skill --force   # overwrite an existing install (after upgrading senate)
-senate --skill-status            # show whether the installed skill matches the bundled one
-senate --uninstall-skill         # remove it
-```
-
-After that, any Claude Code agent can use it — the skill auto-loads when the agent considers consulting senate (judgment calls, plan critiques, "should I X or Y" decisions). Run `senate --skill-status` after upgrading senate; if it reports `differs`, re-run `senate --install-skill --force` to pick up SKILL.md changes.
-
-> The skill isn't installed automatically on `npm install` — npm postinstall scripts are commonly disabled in CI / corporate environments, so the install is opt-in via the command above.
-
 ## Conversation REPL
 
 `senate --repl "..."` runs the first turn normally, then drops into a `senate>` prompt. Each follow-up turn prepends prior turns as context (using the synthesis recommendation when available, falling back to prose, then raw advisor outputs).
@@ -264,6 +264,8 @@ Three wrapped CLIs. Each must be installed and authenticated independently:
 | gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility |
 
 Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_VIBE_BIN`, `_GEMINI_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
+
+**Optional `SENATE_VIBE_WRAPPER` for richer vibe handling.** If you've installed a vibe-orchestration wrapper script (e.g. the one from [pcx-wave/vibe-skill](https://github.com/pcx-wave/vibe-skill) at `~/tools/vibe-delegate`), senate auto-detects it and spawns the wrapper instead of bare `vibe`. The wrapper handles shell-safe prompts, streaming supervision, and an audit log at `~/.local/share/delegate-runs.jsonl`. Override with `SENATE_VIBE_WRAPPER=/path/to/wrapper senate "..."` or fall back to `~/tools/vibe-delegate` if present. When neither exists, senate calls `vibe` directly — no behavior change for users who haven't installed a wrapper. Either way, senate now reads real per-call token counts from vibe's session log (`~/.vibe/logs/session/<id>/meta.json`) and surfaces them in the USAGE footer. *Note: Mistral Pro is a flat-rate plan, so senate does NOT report a `costUsd` for vibe — only tokens.*
 
 **Gemini model.** Senate pins gemini to `gemini-3-flash-preview` by default (Pro-tier reasoning, Flash latency) so advisor calls stay under ~2 min instead of the 5–7 min auto-router can incur on Pro. To opt back into Pro (or any other model), set `SENATE_GEMINI_MODEL=gemini-3.1-pro-preview` and pair it with `--timeout 10m`.
 

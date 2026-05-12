@@ -2,7 +2,7 @@ import { runEngine, type EngineResult } from './engines.js';
 import { getDecision, type Decision } from './orchestrator.js';
 import { synthesize, type SynthesisResult } from './synthesis.js';
 import { section, startSpinner } from './ui.js';
-import { getEngineConfig } from './registry.js';
+import { getEngineConfig, type EngineUsage } from './registry.js';
 
 export type WorkflowResult = {
   decision: Decision;
@@ -239,24 +239,23 @@ export function formatWorkflowResult(result: WorkflowResult): string {
   lines.push(rule);
   lines.push(`  USAGE`);
   lines.push(rule);
+  const formatUsage = (u: EngineUsage | undefined): string => {
+    if (!u) return '';
+    const tokens = u.totalTokens != null
+      ? `${u.totalTokens} tok` + (u.inputTokens != null && u.outputTokens != null ? ` (${u.inputTokens} in / ${u.outputTokens} out)` : '')
+      : '';
+    const cost = u.costUsd != null ? `  $${u.costUsd.toFixed(4)}` : '';
+    return tokens ? `  ${tokens}${cost}` : cost;
+  };
   for (const r of result.advisorResults) {
-    const elapsed = formatElapsed(r.durationMs);
-    let usagePart = '';
-    if (r.usage) {
-      const u = r.usage;
-      const tokens = u.totalTokens != null
-        ? `${u.totalTokens} tok` + (u.inputTokens != null && u.outputTokens != null ? ` (${u.inputTokens} in / ${u.outputTokens} out)` : '')
-        : '';
-      const cost = u.costUsd != null ? `  $${u.costUsd.toFixed(4)}` : '';
-      usagePart = tokens ? `  ${tokens}${cost}` : cost;
-    }
-    lines.push(`  ${r.name.padEnd(20)} ${elapsed.padStart(7)}${usagePart}`);
+    lines.push(`  ${r.name.padEnd(20)} ${formatElapsed(r.durationMs).padStart(7)}${formatUsage(r.usage)}`);
   }
   if (result.synthesis) {
     lines.push(`  ${('synthesis (' + result.synthesis.engine + ')').padEnd(20)} ${formatElapsed(result.synthesis.durationMs).padStart(7)}`);
   }
   if (result.executionResult) {
-    lines.push(`  ${'execute (vibe)'.padEnd(20)} ${formatElapsed(result.executionResult.durationMs).padStart(7)}`);
+    // Vibe-execute reports tokens via the session log (no costUsd on Pro plan).
+    lines.push(`  ${'execute (vibe)'.padEnd(20)} ${formatElapsed(result.executionResult.durationMs).padStart(7)}${formatUsage(result.executionResult.usage)}`);
   }
   lines.push(`  ${'─'.repeat(20)} ${'─'.repeat(7)}`);
   const totalCostUsd = sumCostUsd(result);
