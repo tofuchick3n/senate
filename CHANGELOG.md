@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **Real token tracking for vibe** (closes #35, part 1). Vibe's `--output text` mode prints no stats and there was no `parseUsage` on the registry entry, so vibe contributed nothing to senate's USAGE footer. The new `src/vibe-session-log.ts` helper reads `~/.vibe/logs/session/<id>/meta.json` after every run and extracts real `last_turn_prompt_tokens` / `_completion_tokens` / `_total_tokens`. The USAGE footer now shows e.g. `vibe  9100 tok (9050 in / 50 out)`. The execute (vibe) row also gained a usage column. `costUsd` is **deliberately left undefined** for vibe — Mistral Pro is flat-rate, so the `session_cost` field in the session log is a list-price equivalent at API pricing, not actual spend; reporting it would misrepresent Pro plan billing.
+- **Optional `SENATE_VIBE_WRAPPER` detection** (closes #35, part 2). If `$SENATE_VIBE_WRAPPER` is set, or `~/tools/vibe-delegate` exists and is executable, senate's vibe engine spawns the wrapper with positional args `(cwd, prompt, max-turns)` instead of bare `vibe -p ...`. The wrapper (designed for richer Claude Code → vibe delegation, e.g. [pcx-wave/vibe-skill](https://github.com/pcx-wave/vibe-skill)) handles streaming supervision, shell-safe prompts, and an audit log at `~/.local/share/delegate-runs.jsonl`. In wrapper mode senate recovers the canonical assistant message from `messages.jsonl` rather than relying on stdout (which is a stream of `[read]/[tool]/[vibe]` events). When neither env var nor `~/tools/vibe-delegate` is present, senate falls back to direct vibe spawn — no behavior change for users without a wrapper.
+- Two new test suites (26 tests total): `vibe-session-log.test.ts` exercises happy / missing / malformed / no-stats paths for the session-log helpers; `registry.test.ts` gains a `buildVibeEntry wrapper detection (Option A)` describe that isolates HOME + `$SENATE_VIBE_WRAPPER` to assert direct-mode vs wrapper-mode bin/args shapes.
+
+### Changed
+- **README structure.** "Use from a Claude Code agent" moved up from below "Modes" to right under "Install" — it's an install-time concern, not an advanced topic, so it belongs with the other setup steps. The Engines section now documents `SENATE_VIBE_WRAPPER` alongside the existing `SENATE_*_BIN` overrides.
+
 ## [0.4.3] - 2026-05-12
 
 ### Fixed

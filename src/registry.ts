@@ -11,6 +11,8 @@
  * falling back to the default binary name on PATH.
  */
 
+import { readVibeUsage, readVibeFinalAssistantMessage, resolveVibeWrapper } from './vibe-session-log.js';
+
 export type EngineUsage = {
   inputTokens?: number;
   outputTokens?: number;
@@ -136,10 +138,23 @@ export function parseGeminiJson(stdout: string): { text: string; usage?: EngineU
   }
 }
 
+// Vibe is the execution grunt — last in synthesis priority, NOT in default advisors.
+// Auth patterns are hoisted above REGISTRY because `buildVibeEntry()` references them
+// during array-initializer evaluation (const declarations don't hoist out of TDZ).
+const vibeAuthPatterns = [
+  'please run vibe --setup',
+  'api key not found',
+  'api key not valid',
+  'api key not set',
+  'api key required',
+  'authentication failed',
+  'authentication required',
+  'not authenticated'
+];
+
 /**
  * Engine registry. Order matters: it determines synthesis lead priority.
  * Claude is first because it produces the most reliable structured output.
- * Vibe is the execution grunt — last in synthesis priority, NOT in default advisors.
  */
 const REGISTRY: EngineEntry[] = [
   entry({
@@ -192,7 +207,53 @@ const REGISTRY: EngineEntry[] = [
     advisorInactivityMs: 240000,
     env: { GEMINI_CLI_TRUST_WORKSPACE: 'true' }
   }),
-  entry({
+  buildVibeEntry()
+];
+
+/**
+ * Construct the vibe registry entry. Two shapes depending on whether the user
+ * has an optional wrapper installed:
+ *
+ *   - Wrapper mode  — `$SENATE_VIBE_WRAPPER` is set, or `~/tools/vibe-delegate`
+ *     exists and is executable. Senate spawns the wrapper with positional args
+ *     `(workdir, prompt, max-turns)` and recovers the canonical answer + tokens
+ *     from the vibe session log (the wrapper's stdout is a stream of `[read]/
+ *     [tool]/[vibe]` events, not the assistant message).
+ *
+ *   - Direct mode — fall back to `vibe -p ...` with the runaway-loop guards
+ *     shipped in #34 (`--trust`, `--max-turns 25`, `--max-price 1.00`). We
+ *     still recover real token counts from the session log via `parseUsage`,
+ *     so vibe contributes to senate's USAGE footer in both modes.
+ *
+ * `costUsd` is intentionally never populated for vibe — Mistral Pro is flat-
+ * rate, so the `session_cost` field in vibe's session log is a list-price
+ * equivalent at API pricing, not actual spend. Reporting it would misrepresent
+ * the user's Pro plan billing.
+ */
+export function buildVibeEntry(): EngineEntry {
+  const wrapper = resolveVibeWrapper();
+  if (wrapper) {
+    return entry({
+      name: 'vibe',
+      defaultBinName: wrapper,
+      // Wrapper positional args. We pass cwd as workdir so vibe inherits the same
+      // anchor senate was launched from. `25` matches direct-mode `--max-turns`
+      // (the wrapper-installer skill caps at 12 for opinionated reasons, but for
+      // senate's opinion-style calls 25 stays consistent with direct mode).
+      args: (p) => [process.cwd(), p, '25'],
+      // stdout is a stream of `[read]/[tool]/[vibe]` lines. The canonical answer
+      // lives in messages.jsonl — fall back to stdout if recovery fails (don't
+      // strand the caller on a session-log read error).
+      parse: (stdout) => readVibeFinalAssistantMessage() || stdout.trim(),
+      parseUsage: () => readVibeUsage(),
+      authPatterns: vibeAuthPatterns,
+      inSynthesisPriority: true,
+      inDefaultAdvisors: false,
+      healthCheckTimeoutMs: 15000,
+      advisorInactivityMs: 60000
+    });
+  }
+  return entry({
     name: 'vibe',
     defaultBinName: 'vibe',
     // `-p` runs vibe in programmatic mode with the auto-approve agent (per `vibe --help`),
@@ -205,25 +266,14 @@ const REGISTRY: EngineEntry[] = [
     // (TDD feature tier) so they don't tighten normal use — they just prevent runaway loops.
     args: (p) => ['-p', p, '--output', 'text', '--trust', '--max-turns', '25', '--max-price', '1.00'],
     parse: (stdout) => stdout.trim(),
-    authPatterns: [
-      'please run vibe --setup',
-      'api key not found',
-      'api key not valid',
-      'api key not set',
-      'api key required',
-      'authentication failed',
-      'authentication required',
-      'not authenticated'
-    ],
-    // vibe is the execution grunt, not an advisor. Opt in with `-a claude,vibe` if you want
-    // its opinion explicitly. Last in synthesis priority — only leads if both claude and
-    // gemini fail.
+    parseUsage: () => readVibeUsage(),
+    authPatterns: vibeAuthPatterns,
     inSynthesisPriority: true,
     inDefaultAdvisors: false,
     healthCheckTimeoutMs: 15000,
-    advisorInactivityMs: 60000   // text-streaming, but be generous
-  })
-];
+    advisorInactivityMs: 60000
+  });
+}
 
 const BY_NAME: Record<string, EngineEntry> = Object.fromEntries(REGISTRY.map(e => [e.name, e]));
 

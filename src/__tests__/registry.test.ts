@@ -1,12 +1,16 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import {
   resolveBin,
   getEngineConfig,
   getDefaultAdvisors,
   getSynthesisPriority,
   getAuthPatterns,
-  listEngineNames
+  listEngineNames,
+  buildVibeEntry
 } from '../registry.js';
 
 describe('resolveBin', () => {
@@ -94,13 +98,15 @@ describe('registry contents', () => {
     assert.equal(v!.inSynthesisPriority, true, 'vibe still eligible to lead synthesis as last-resort fallback');
   });
 
-  it('vibe args carry the runaway-loop guards (max-turns, max-price, trust)', () => {
-    const args = getEngineConfig('vibe')!.args('hi');
-    assert.ok(args.includes('--trust'), 'vibe must skip the trust prompt — stdin is closed');
-    const tIdx = args.indexOf('--max-turns');
-    assert.ok(tIdx !== -1 && args[tIdx + 1], '--max-turns must be set with a value');
-    const pIdx = args.indexOf('--max-price');
-    assert.ok(pIdx !== -1 && args[pIdx + 1], '--max-price must be set with a value');
+  // The direct-mode args assertion (--trust, --max-turns, --max-price) lives in the
+  // `buildVibeEntry wrapper detection` describe at the bottom of this file — that suite
+  // can isolate HOME/env to force direct mode, which is necessary because the module-load
+  // vibe entry switches to wrapper mode when `~/tools/vibe-delegate` exists on the runner.
+
+  it('vibe entry has parseUsage wired so the USAGE footer can show its tokens', () => {
+    const v = getEngineConfig('vibe');
+    assert.ok(v);
+    assert.equal(typeof v!.parseUsage, 'function', 'vibe must expose parseUsage to surface real session-log tokens');
   });
 
   it('every engine has an advisorInactivityMs configured', () => {
@@ -144,5 +150,61 @@ describe('getAuthPatterns (per-engine, no cross-contamination)', () => {
         `${name} should match "authentication failed"`
       );
     }
+  });
+});
+
+describe('buildVibeEntry wrapper detection (Option A)', () => {
+  let savedEnv: string | undefined;
+  let savedHome: string | undefined;
+  let tmpHome: string;
+
+  beforeEach(() => {
+    savedEnv = process.env.SENATE_VIBE_WRAPPER;
+    savedHome = process.env.HOME;
+    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'senate-wrap-'));
+    process.env.HOME = tmpHome;
+    delete process.env.SENATE_VIBE_WRAPPER;
+  });
+
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env.SENATE_VIBE_WRAPPER;
+    else process.env.SENATE_VIBE_WRAPPER = savedEnv;
+    if (savedHome === undefined) delete process.env.HOME;
+    else process.env.HOME = savedHome;
+    fs.rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  it('direct mode: bin is "vibe" and args use the -p flag-stew when no wrapper is present', () => {
+    const e = buildVibeEntry();
+    assert.equal(e.defaultBinName, 'vibe', 'falls back to vibe on PATH');
+    const args = e.args('hello');
+    assert.ok(args.includes('-p'), 'direct mode passes prompt via -p');
+    assert.ok(args.includes('--trust'));
+    assert.ok(args.includes('--max-turns'));
+  });
+
+  it('wrapper mode: bin is the wrapper path and args are positional (workdir, prompt, max-turns)', () => {
+    const wrapper = path.join(tmpHome, 'stub-wrapper');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env bash\necho stub');
+    fs.chmodSync(wrapper, 0o755);
+    process.env.SENATE_VIBE_WRAPPER = wrapper;
+
+    const e = buildVibeEntry();
+    assert.equal(e.defaultBinName, wrapper, 'bin should be the resolved wrapper path');
+    const args = e.args('a-prompt');
+    assert.ok(!args.includes('-p'), 'wrapper mode must NOT pass -p — positional only');
+    assert.ok(!args.includes('--trust'), 'wrapper handles --trust internally');
+    assert.equal(args[1], 'a-prompt', 'second positional arg is the prompt');
+    assert.equal(args.length, 3, 'wrapper expects exactly (workdir, prompt, max-turns)');
+  });
+
+  it('wrapper mode: still wires parseUsage so the USAGE footer is populated', () => {
+    const wrapper = path.join(tmpHome, 'stub-wrapper');
+    fs.writeFileSync(wrapper, '#!/usr/bin/env bash\necho stub');
+    fs.chmodSync(wrapper, 0o755);
+    process.env.SENATE_VIBE_WRAPPER = wrapper;
+
+    const e = buildVibeEntry();
+    assert.equal(typeof e.parseUsage, 'function');
   });
 });
