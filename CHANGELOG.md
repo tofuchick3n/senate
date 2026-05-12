@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-05-12
+
+### Fixed
+- **Bounded vibe engine spawn with runaway-loop guards** (#34). `vibe -p` mode defaults to the auto-approve agent and can multi-turn its way through tool calls indefinitely; senate's only stop signal was the 60s inactivity timeout, which is unreliable for buffered output. The vibe registry entry now passes `--trust` (skips the stdin trust prompt — senate spawns with `stdio: ignore` so an interactive prompt would hang), `--max-turns 25`, and `--max-price 1.00`. Numbers match the upper-end TDD-tier caps from the standalone `vibe-delegate` skill, so normal usage isn't tightened — only runaways are stopped. Regression test added.
+
 ## [0.4.2] - 2026-05-07
 
 ### Fixed
