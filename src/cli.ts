@@ -91,6 +91,7 @@ program
   .option('--no-tui', 'Disable the live dashboard (fallback to plain settle-line output)')
   .option('--quiet', 'Suppress all progress output (banner, dashboard, settle lines, save footer); print the final result only')
   .option('--repl', 'After the first result, drop into a conversation REPL with prior turns as context')
+  .option('--stdin', 'Read stdin and append it to the positional query. Without this flag, stdin is only consumed when no positional query was given.')
 
   // Transcripts (#12)
   .option('--no-transcript', 'Do not persist this session to ~/.senate/sessions/')
@@ -186,13 +187,13 @@ program
     }
 
     // Resolve query: positional arg, then stdin, then help.
+    // readStdin() blocks until EOF — inherited non-TTY stdin under background runners
+    // may never close, so only read stdin when there's no positional query, or when the
+    // user explicitly opts in with --stdin to combine positional + piped input.
     let query = queryArg;
-    const stdinPiped = !process.stdin.isTTY;
-    if (stdinPiped) {
+    if ((!query || options.stdin) && !process.stdin.isTTY) {
       const stdinText = await readStdin();
-      if (stdinText) {
-        query = query ? `${query}\n\n${stdinText}` : stdinText;
-      }
+      if (stdinText) query = query ? `${query}\n\n${stdinText}` : stdinText;
     }
 
     // --diff: review a file or `git diff` output. The value is `true` when no
