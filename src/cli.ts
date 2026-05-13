@@ -186,13 +186,12 @@ program
     }
 
     // Resolve query: positional arg, then stdin, then help.
+    // Only consume stdin when no positional query was given — readStdin() blocks on EOF,
+    // and inherited non-TTY stdin under background runners may never close.
     let query = queryArg;
-    const stdinPiped = !process.stdin.isTTY;
-    if (stdinPiped) {
+    if (!query && !process.stdin.isTTY) {
       const stdinText = await readStdin();
-      if (stdinText) {
-        query = query ? `${query}\n\n${stdinText}` : stdinText;
-      }
+      if (stdinText) query = stdinText;
     }
 
     // --diff: review a file or `git diff` output. The value is `true` when no
