@@ -46,20 +46,17 @@ const NON_FATAL_WARNING_RE = /^(ripgrep is not available|skill conflict detected
  *   3. First non-empty line as a final fallback.
  */
 export function pickErrorLine(combined: string): string {
-  const lower = combined.toLowerCase();
-  if (
-    lower.includes('"code": 429') ||
-    lower.includes('"code":429') ||
-    /\bstatus:?\s*429\b/.test(lower) ||
-    lower.includes('resource_exhausted') ||
-    lower.includes('too many requests')
-  ) {
+  if (/("code":\s*429|\bstatus:?\s*429\b|resource_exhausted|too many requests)/i.test(combined)) {
     return 'API quota / rate limit exceeded (HTTP 429 — check your provider billing)';
   }
 
   const lines = combined.split('\n').map(l => l.trim()).filter(Boolean);
+  // `length >= 2` + the letter requirement together filter bare punctuation
+  // (`}`, `}}`, `42`) while keeping short-but-valid errors like "Error", "Fail",
+  // or "OOM". An earlier `>= 6` was over-restrictive — gemini-code-assist flagged
+  // it on the original PR.
   const meaningful = lines.filter(l =>
-    !NON_FATAL_WARNING_RE.test(l) && l.length >= 6 && /[a-z]/i.test(l)
+    !NON_FATAL_WARNING_RE.test(l) && l.length >= 2 && /[a-z]/i.test(l)
   );
   if (meaningful.length > 0) {
     const picked = meaningful[meaningful.length - 1];
