@@ -15,8 +15,64 @@ export type EngineResult = {
   output: string;
   durationMs: number;
   error?: string;
+  /**
+   * Raw stdout captured on non-zero exit. Always present on status='error', so the
+   * session file and orchestrators can inspect what the engine wrote before failing.
+   * Empty on missing/unauthenticated/cancelled (the engine never produced output).
+   */
+  rawStdout?: string;
+  /**
+   * Raw stderr captured on non-zero exit. Same rationale as rawStdout — keeps
+   * post-mortem debugging possible without re-running the prompt.
+   */
+  rawStderr?: string;
   usage?: EngineUsage;
 };
+
+/**
+ * Patterns we know are non-fatal warnings from engine CLIs. The first line of
+ * stderr is often a warning (Gemini "Ripgrep not available", "Skill conflict
+ * detected") — surfacing that as the error masked the real cause (e.g. an HTTP
+ * 429 quota error deep in the output).
+ */
+const NON_FATAL_WARNING_RE = /^(ripgrep is not available|skill conflict detected|warning:|warn:|note:|at )/i;
+
+/**
+ * Picks a useful error line out of combined stdout+stderr. Order of preference:
+ *   1. Recognized infrastructure failures (HTTP 429 quota, auth-already-handled-upstream,
+ *      OOM) reported with a clean canonical message.
+ *   2. The last "meaningful" line — non-warning, has letters, ≥6 chars (skips bare
+ *      `}` / `}}}` from JSON stack-trace tails).
+ *   3. First non-empty line as a final fallback.
+ */
+export function pickErrorLine(combined: string): string {
+  if (/("code":\s*429|\bstatus:?\s*429\b|resource_exhausted|too many requests)/i.test(combined)) {
+    return 'API quota / rate limit exceeded (HTTP 429 — check your provider billing)';
+  }
+
+  const lines = combined.split('\n').map(l => l.trim()).filter(Boolean);
+  // `length >= 2` + the letter requirement together filter bare punctuation
+  // (`}`, `}}`, `42`) while keeping short-but-valid errors like "Error", "Fail",
+  // or "OOM". An earlier `>= 6` was over-restrictive — gemini-code-assist flagged
+  // it on the original PR.
+  const meaningful = lines.filter(l =>
+    !NON_FATAL_WARNING_RE.test(l) && l.length >= 2 && /[a-z]/i.test(l)
+  );
+  if (meaningful.length > 0) {
+    const picked = meaningful[meaningful.length - 1];
+    return picked.length > 240 ? picked.slice(0, 237) + '...' : picked;
+  }
+  return lines[0] || 'Unknown error';
+}
+
+/**
+ * Spawn-failure sentinel written by the `child.on('error')` handler below.
+ * Real binary-missing errors land here as `spawn <name>: ENOENT ...`. Matching
+ * THIS pattern (rather than an arbitrary 'not found' substring on combined output)
+ * keeps us from misclassifying long-running model responses that happen to mention
+ * 'not found' as a missing-binary failure.
+ */
+const SPAWN_ERROR_RE = /(^|\n)spawn [^\n]*: (ENOENT|EACCES|EPERM|ENOTDIR)\b/;
 
 export type RunEngineOptions = {
   inactivityMs?: number;
@@ -149,7 +205,11 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
             error: 'Authentication required'
           });
         }
-        if (combinedOutput.includes('not found') || combinedOutput.includes('ENOENT')) {
+        // Strict spawn-failure check via the sentinel our error handler writes —
+        // not a fuzzy `combinedOutput.includes('not found')` match, which was
+        // misclassifying long-running engine responses (e.g. Gemini producing
+        // text containing 'not found') as missing-binary failures.
+        if (SPAWN_ERROR_RE.test(stderr)) {
           return resolve({
             name,
             status: 'missing',
@@ -158,12 +218,17 @@ export async function runEngine(name: string, prompt: string, opts: RunEngineOpt
             error: 'Binary not found'
           });
         }
+        // Preserve raw stdout/stderr so the session file has evidence to debug
+        // ambiguous non-zero exits (engine produced output but exited non-zero).
+        // The error message picker now skips known non-fatal warning prefixes.
         return resolve({
           name,
           status: 'error',
           output: '',
           durationMs,
-          error: combinedOutput.trim().split('\n').at(0) || 'Unknown error'
+          error: pickErrorLine(combinedOutput),
+          rawStdout: stdout,
+          rawStderr: stderr
         });
       }
 
