@@ -9,7 +9,7 @@
    ╚══════╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝   ╚══════╝
 ```
 
-A small CLI that asks two or three model CLIs the same question at once (claude and gemini by default; vibe is opt-in via `-a` since it's better as an executor than as an advisor), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
+A small CLI that asks two or three model CLIs the same question at once (claude and codex by default — both flat-rate; gemini and vibe are opt-in via `-a` since gemini is API-billed per-token and vibe is better as an executor than as an advisor), then writes you a structured opinion — what they agree on, where they disagree, who's the outlier, and a final recommendation. No API keys, no extra bills: it just spawns the CLIs you already have authenticated.
 
 ## How I use it
 
@@ -25,20 +25,20 @@ You don't need an "outer agent" to use it. It works fine as a one-shot CLI, a RE
 flowchart LR
   P[your prompt] --> CO[consult in parallel]
   CO --> C1[claude]
-  CO --> C2[gemini]
+  CO --> C2[codex]
   C1 --> S[synthesize]
   C2 --> S
   S --> O["CONSENSUS / DISAGREEMENTS<br/>OUTLIERS / RECOMMENDATION"]
   O --> OUT[stdout]
 ```
 
-Default path: parallel consult (claude + gemini) → synthesize → print. No orchestrator round-trip, no execution.
+Default path: parallel consult (claude + codex) → synthesize → print. No orchestrator round-trip, no execution.
 
 Two opt-ins on top:
 
 - `--smart` adds a Claude routing step before the consult phase (the orchestrator decides whether to consult, execute, or both).
 - `--execute-only` (or letting the orchestrator pick it) runs the task via vibe instead of asking advisors.
-- `-a claude,gemini,vibe` adds vibe as a third advisor if you specifically want its take, but the design assumes vibe is the execution grunt and synthesis prefers claude → gemini → vibe in that order.
+- `-a claude,codex,gemini` adds gemini as a third advisor when you specifically want a per-token model in the mix. `-a claude,codex,vibe` does the same for vibe. Synthesis prefers leads in this order: claude → codex → gemini → vibe.
 
 ## Install
 
@@ -51,7 +51,7 @@ git clone https://github.com/tofuchick3n/senate
 cd senate && npm install && npm run build && npm link
 ```
 
-Each wrapped CLI (claude / gemini / vibe) authenticates separately — senate doesn't manage their credentials. Verify with:
+Each wrapped CLI (claude / codex / gemini / vibe) authenticates separately — senate doesn't manage their credentials. Verify with:
 
 ```bash
 senate --check-engines
@@ -179,7 +179,7 @@ senate --repl < spec.md
 ### Skip vibe for read-only review work (faster)
 
 ```bash
-senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
+senate -a claude,codex "Compare REST vs GraphQL for an internal API"
 ```
 
 ## Modes
@@ -189,7 +189,7 @@ senate -a claude,gemini "Compare REST vs GraphQL for an internal API"
 | Default — consult + synthesize, no execute | _(no flag)_ |
 | Let Claude decide whether to consult and/or execute | `--smart` |
 | Skip the synthesis step | `--no-synthesis` |
-| Pick advisors | `-a claude,gemini` |
+| Pick advisors | `-a claude,codex` |
 | Just run vibe | `--execute-only` |
 | Drop into a REPL after the first answer | `--repl` |
 | Machine output | `--json` or `--json-stream` |
@@ -255,19 +255,22 @@ When disabled you get the static fallback: banner + per-engine settle line as ea
 
 ## Engines
 
-Three wrapped CLIs. Each must be installed and authenticated independently:
+Four wrapped CLIs. Each must be installed and authenticated independently:
 
-| Engine | Install / auth |
-|--------|----------------|
-| claude | Install per Anthropic docs; run `claude` to authenticate |
-| vibe | Run `vibe --setup` |
-| gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility |
+| Engine | Install / auth | Default advisor? |
+|--------|----------------|-----------------|
+| claude | Install per Anthropic docs; run `claude` to authenticate | ✅ |
+| codex | `npm install -g @openai/codex` then `codex login` (uses your ChatGPT Plus session) | ✅ |
+| gemini | Set `GEMINI_API_KEY` env var, or have Code Assist eligibility | ⛔ opt-in (API-billed per token) |
+| vibe | Run `vibe --setup` | ⛔ executor, not advisor |
 
-Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_VIBE_BIN`, `_GEMINI_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
+Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_BIN=/opt/homebrew/bin/claude senate "..."` (same for `_CODEX_BIN`, `_GEMINI_BIN`, `_VIBE_BIN`). Adding a new engine is one entry in `src/registry.ts` — see `docs/engines.md`.
 
-**Optional `SENATE_VIBE_WRAPPER` for richer vibe handling.** If you've installed a vibe-orchestration wrapper script (e.g. the one from [pcx-wave/vibe-skill](https://github.com/pcx-wave/vibe-skill) at `~/tools/vibe-delegate`), senate auto-detects it and spawns the wrapper instead of bare `vibe`. The wrapper handles shell-safe prompts, streaming supervision, and an audit log at `~/.local/share/delegate-runs.jsonl`. Override with `SENATE_VIBE_WRAPPER=/path/to/wrapper senate "..."` or fall back to `~/tools/vibe-delegate` if present. When neither exists, senate calls `vibe` directly — no behavior change for users who haven't installed a wrapper. Either way, senate now reads real per-call token counts from vibe's session log (`~/.vibe/logs/session/<id>/meta.json`) and surfaces them in the USAGE footer. *Note: Mistral Pro is a flat-rate plan, so senate does NOT report a `costUsd` for vibe — only tokens.*
+**Default-advisor policy.** Claude and codex are flat-rate (Claude Code subscription / ChatGPT Plus), so they don't surprise you with a bill mid-month. Gemini is per-token API-billed and was previously on by default — flipped to opt-in in v0.4.7 after a real-world incident where it silently degraded to claude-only when an account hit its monthly spending cap. Re-enable explicitly with `-a claude,codex,gemini` or via `~/.senate/config.json`.
 
-**Gemini model.** Senate pins gemini to `gemini-3-flash-preview` by default (Pro-tier reasoning, Flash latency) so advisor calls stay under ~2 min instead of the 5–7 min auto-router can incur on Pro. To opt back into Pro (or any other model), set `SENATE_GEMINI_MODEL=gemini-3.1-pro-preview` and pair it with `--timeout 10m`.
+**Optional `SENATE_VIBE_WRAPPER` for richer vibe handling.** If you've installed a vibe-orchestration wrapper script (e.g. the one from [pcx-wave/vibe-skill](https://github.com/pcx-wave/vibe-skill) at `~/tools/vibe-delegate`), senate auto-detects it and spawns the wrapper instead of bare `vibe`. The wrapper handles shell-safe prompts, streaming supervision, and an audit log at `~/.local/share/delegate-runs.jsonl`. Override with `SENATE_VIBE_WRAPPER=/path/to/wrapper senate "..."` or fall back to `~/tools/vibe-delegate` if present. When neither exists, senate calls `vibe` directly — no behavior change for users who haven't installed a wrapper. Either way, senate now reads real per-call token counts from vibe's session log (`~/.vibe/logs/session/<id>/meta.json`) and surfaces them in the USAGE footer. *Note: Mistral Pro is a flat-rate plan, so senate does NOT report a `costUsd` for vibe — only tokens. The same applies to codex on ChatGPT Plus.*
+
+**Model selection.** Senate pins gemini to `gemini-3-flash-preview` and lets codex auto-route based on your auth surface (ChatGPT Plus picks based on subscription tier; passing `-m gpt-5-codex` on a ChatGPT-account session returns a 400). Override per call with `SENATE_GEMINI_MODEL=gemini-3.1-pro-preview senate "..."` (pair with `--timeout 10m` for Gemini Pro) or `SENATE_CODEX_MODEL=o3-mini senate "..."` (codex API auth only).
 
 ## Config file
 
@@ -277,7 +280,7 @@ Verify with `senate --check-engines`. Override binary paths with `SENATE_CLAUDE_
 { "advisors": ["claude", "vibe", "gemini"] }
 ```
 
-When the config file defines `advisors`, it becomes the default for `-a` so you don't have to retype the list. Pass `-a` on the CLI to override per-run. If no config file exists, the registry default (`claude,gemini`) is used.
+When the config file defines `advisors`, it becomes the default for `-a` so you don't have to retype the list. Pass `-a` on the CLI to override per-run. If no config file exists, the registry default (`claude,codex`) is used.
 
 ## Cancellation (Ctrl-C)
 
@@ -317,8 +320,8 @@ Available on `WorkflowResult.synthesis.structured`. The human view is rendered d
 | `--no-execute` | Skip execute phase |
 | `--smart` | Opt into orchestrator routing (Claude decides what to do) |
 | `--diff [file]` | Review a diff. No arg → `git diff` (unstaged); with a file path → that file. Optional positional query becomes the review focus |
-| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,gemini` |
-| `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=240s, gemini=240s, vibe=60s |
+| `-a, --advisors <list>` | Comma-separated advisor names. Default: `claude,codex` |
+| `--timeout <duration>` | Per-advisor inactivity timeout. Accepts `600`, `600s`, `10m`, `1h`, `1500ms`. Defaults: claude=240s, codex=240s, gemini=240s, vibe=60s |
 | `--no-synthesis` | Skip synthesis |
 | `--json` | Print final `WorkflowResult` as JSON to stdout |
 | `--json-stream` | NDJSON events on stdout. Mutex with `--json` |
