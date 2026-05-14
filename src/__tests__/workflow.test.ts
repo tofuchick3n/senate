@@ -115,4 +115,23 @@ describe('formatWorkflowResult empty-result message', () => {
     const out = formatWorkflowResult(result);
     assert.doesNotMatch(out, /No results/);
   });
+
+  it('hides costUsd in the USAGE footer (claude on Pro/Max is flat-rate; $ would mislead)', () => {
+    const result: WorkflowResult = {
+      ...baseResult,
+      advisorResults: [{
+        name: 'claude',
+        status: 'ok',
+        output: 'ok',
+        durationMs: 1234,
+        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, costUsd: 0.4242 }
+      }]
+    };
+    const out = formatWorkflowResult(result);
+    // Tokens should still be there
+    assert.match(out, /30 tok \(10 in \/ 20 out\)/, 'tokens must still render');
+    // No $ amounts anywhere in the footer
+    assert.doesNotMatch(out, /\$0\.4242/, 'per-engine cost must NOT render');
+    assert.doesNotMatch(out, /\$0\.\d+/, 'no dollar amounts anywhere');
+  });
 });
