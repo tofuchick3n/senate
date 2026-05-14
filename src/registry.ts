@@ -106,6 +106,74 @@ export function parseClaudeJson(stdout: string): { text: string; usage?: EngineU
 }
 
 /**
+ * Parser for `codex exec ... --json`. stdout is NDJSON (one event per line)
+ * with the shape:
+ *   {type: 'thread.started', thread_id}
+ *   {type: 'turn.started'}
+ *   {type: 'item.completed', item: {id, type: 'agent_message', text}}   ← final text (last wins)
+ *   {type: 'turn.completed', usage: {input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens}}
+ *
+ * codex prints a harmless "Reading additional input from stdin..." preamble even
+ * when stdin is /dev/null; the line-by-line JSON-parse loop discards it silently.
+ * Exported for tests.
+ */
+export function parseCodexJsonl(stdout: string): { text: string; usage?: EngineUsage } {
+  let text = '';
+  let inputTokens: number | undefined;
+  let outputTokens: number | undefined;
+  let reasoningTokens: number | undefined;
+  let sawUsage = false;
+
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj: any;
+    try { obj = JSON.parse(trimmed); } catch { continue; }
+    if (!obj || typeof obj !== 'object') continue;
+
+    if (obj.type === 'item.completed' && obj.item?.type === 'agent_message' && typeof obj.item.text === 'string') {
+      text = obj.item.text;  // last agent_message wins for multi-message turns
+    }
+    if (obj.type === 'turn.completed' && obj.usage && typeof obj.usage === 'object') {
+      sawUsage = true;
+      const u = obj.usage;
+      if (typeof u.input_tokens === 'number') inputTokens = u.input_tokens;
+      if (typeof u.output_tokens === 'number') outputTokens = u.output_tokens;
+      if (typeof u.reasoning_output_tokens === 'number') reasoningTokens = u.reasoning_output_tokens;
+    }
+  }
+
+  if (!text) {
+    // Strip the harmless stdin-reading preamble before falling through, so the
+    // fallback isn't polluted when the model truly returned nothing.
+    const cleaned = stdout.replace(/^Reading additional input from stdin\.\.\..*$/gm, '').trim();
+    return { text: cleaned };
+  }
+  if (!sawUsage) return { text };
+
+  // Only sum when components are actually present — mirrors `parseClaudeJson`'s
+  // pattern. Defaulting missing fields to 0 would surface misleading zeroes in
+  // the USAGE footer (gemini-code-assist flagged this on PR #39).
+  const totalOutput = (outputTokens !== undefined || reasoningTokens !== undefined)
+    ? (outputTokens ?? 0) + (reasoningTokens ?? 0)
+    : undefined;
+  const totalTokens = (inputTokens !== undefined && totalOutput !== undefined)
+    ? inputTokens + totalOutput
+    : undefined;
+  return {
+    text,
+    usage: {
+      inputTokens,
+      // Roll reasoning tokens into outputTokens — they're billed and produced
+      // by the model the same way; surfacing them separately would clutter the
+      // single-line USAGE footer.
+      outputTokens: totalOutput,
+      totalTokens
+    }
+  };
+}
+
+/**
  * Parser for gemini `-p ... --output-format json`. stdout has noise then JSON.
  * Shape: { response, stats: { models: { <model>: { tokens: { input, candidates, total } } } } }.
  * Exported for tests.
@@ -177,6 +245,46 @@ const REGISTRY: EngineEntry[] = [
     advisorInactivityMs: 240000  // JSON output buffers; needs full-response budget
   }),
   entry({
+    name: 'codex',
+    defaultBinName: 'codex',
+    // `codex exec` is the non-interactive subcommand. NDJSON event stream via --json
+    // (parsed by parseCodexJsonl above). --sandbox read-only lets codex read referenced
+    // files during a consult but never exec/write — matches claude/gemini's "second
+    // opinion" surface and avoids running shell commands the user didn't intend.
+    // --skip-git-repo-check is required for senate calls from non-repo cwds.
+    //
+    // Model: by default we DON'T pass `-m` — codex picks based on the auth surface
+    // (ChatGPT Plus auto-routes; API key callers get the model their key supports).
+    // Passing `-m gpt-5-codex` on ChatGPT auth returns a 400 "model not supported
+    // when using Codex with a ChatGPT account" — that's why this flag is opt-in.
+    // Users with API auth (or who want to pin a specific model) set SENATE_CODEX_MODEL.
+    args: (p) => {
+      const base = ['exec', p, '--json', '--skip-git-repo-check', '-s', 'read-only'];
+      const model = process.env.SENATE_CODEX_MODEL?.trim();
+      return model ? [...base, '-m', model] : base;
+    },
+    parse: (stdout) => parseCodexJsonl(stdout).text,
+    parseUsage: (stdout) => parseCodexJsonl(stdout).usage,
+    authPatterns: [
+      'not logged in',
+      'please run codex login',
+      'codex login',
+      'authentication failed',
+      'authentication required',
+      'not authenticated',
+      'no api key'
+    ],
+    inSynthesisPriority: true,
+    // Default advisor: codex on ChatGPT Plus is flat-rate (~€20/mo) so it doesn't
+    // bleed per-token cost the way gemini does. Replaces gemini in the default
+    // second-advisor slot — users who want gemini back add it via `-a` or
+    // `~/.senate/config.json`. Users without codex see status='missing', same
+    // graceful-degrade pattern as gemini before this change.
+    inDefaultAdvisors: true,
+    healthCheckTimeoutMs: 30000,
+    advisorInactivityMs: 240000  // NDJSON streams but the model still buffers reasoning before the first item — give claude/gemini-class headroom
+  }),
+  entry({
     name: 'gemini',
     defaultBinName: 'gemini',
     // Pin to gemini-3-flash-preview by default — Pro-tier reasoning at Flash latency. Without `-m`
@@ -199,7 +307,11 @@ const REGISTRY: EngineEntry[] = [
       'not authenticated'
     ],
     inSynthesisPriority: true,
-    inDefaultAdvisors: true,    // promoted: vibe is execution-only; gemini is the second advisor
+    // Opt-in (was default until v0.4.6). Gemini API is per-token billed and a user
+    // can hit the monthly spending cap mid-month; making it opt-in keeps the default
+    // path on flat-rate engines (claude subscription + codex Plus). Re-enable
+    // explicitly with `-a claude,codex,gemini` or in `~/.senate/config.json`.
+    inDefaultAdvisors: false,
     healthCheckTimeoutMs: 30000,
     // 240s matches claude. Real brainstorm-with-file-reads prompts on Flash 3 land around 170s,
     // so 120s was too tight — bumped with ~40% headroom. If a user opts into Pro via

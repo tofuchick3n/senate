@@ -1,6 +1,6 @@
 # Architecture
 
-Senate is a Node 18+ TypeScript ESM CLI built with commander. It spawns local CLIs (`claude`, `vibe`, `gemini`) as child processes, consults them in parallel, synthesizes their answers, and renders the result. No API keys are handled by senate itself.
+Senate is a Node 18+ TypeScript ESM CLI built with commander. It spawns local CLIs (`claude`, `codex`, `gemini`, `vibe`) as child processes, consults them in parallel, synthesizes their answers, and renders the result. No API keys are handled by senate itself.
 
 ```mermaid
 flowchart TD
@@ -26,7 +26,7 @@ flowchart TD
    - If `--smart`: `orchestrator.ts` asks Claude what to do
    - Otherwise: defaults (consult all selected advisors, synthesize, no execute)
 3. Advisors run in parallel via `Promise.allSettled` (`engines.ts` spawns each child detached so the whole subprocess group can be killed)
-4. If ≥2 succeed and synthesis isn't disabled, `synthesis.ts` asks the lead summarizer (claude → gemini → vibe fallback) for structured JSON: consensus / disagreements / outliers / recommendation. Falls back to raw output if JSON parse fails.
+4. If ≥2 succeed and synthesis isn't disabled, `synthesis.ts` asks the lead summarizer (claude → codex → gemini → vibe fallback) for structured JSON: consensus / disagreements / outliers / recommendation. Falls back to raw output if JSON parse fails.
 5. If `decision.executeWithVibe`, vibe runs as a separate single-engine call
 6. `cli.ts` dispatches the rendered result to stdout: human format, `--json` blob, or `--json-stream` final `{type:'result',...}` line
 
@@ -112,7 +112,7 @@ Advisors run via `Promise.allSettled`. stdout streaming is disabled during the p
 
 ## Synthesis & lead fallback
 
-`synthesize()` builds a structured-JSON prompt naming only the advisors that actually responded. Tries leads in `getSynthesisPriority()` order (default: claude → gemini → vibe; vibe is fallback only since its structured outputs are weaker). First successful response wins; if all fail, returns null and the workflow continues with `synthesis: null`.
+`synthesize()` builds a structured-JSON prompt naming only the advisors that actually responded. Tries leads in `getSynthesisPriority()` order (default: claude → codex → gemini → vibe; vibe is fallback only since its structured outputs are weaker). First successful response wins; if all fail, returns null and the workflow continues with `synthesis: null`.
 
 JSON parse uses `extractJson` (handles fenced / wrapped output) followed by `parseStructured` (coerces partial / malformed shapes into safe defaults). Prose `output` is rendered deterministically from `structured` via `renderSynthesis`.
 

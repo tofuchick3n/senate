@@ -51,19 +51,19 @@ describe('resolveBin', () => {
 });
 
 describe('registry contents', () => {
-  it('lists exactly the three known engines', () => {
-    assert.deepEqual(listEngineNames(), ['claude', 'gemini', 'vibe']);
+  it('lists exactly the four known engines', () => {
+    assert.deepEqual(listEngineNames(), ['claude', 'codex', 'gemini', 'vibe']);
   });
 
-  it('default advisors are claude and gemini (vibe is execution-only, opt-in advisor)', () => {
-    assert.deepEqual(getDefaultAdvisors(), ['claude', 'gemini']);
+  it('default advisors are claude + codex (flat-rate engines); gemini opt-in (API-billed), vibe execution-only', () => {
+    assert.deepEqual(getDefaultAdvisors(), ['claude', 'codex']);
   });
 
-  it('synthesis priority places claude first, vibe last (vibe is fallback only)', () => {
+  it('synthesis priority: claude → codex → gemini → vibe (vibe is last-resort fallback)', () => {
     const priority = getSynthesisPriority();
     assert.equal(priority[0], 'claude', 'claude must lead synthesis — best at structured output');
     assert.equal(priority[priority.length - 1], 'vibe', 'vibe is fallback only');
-    assert.deepEqual(priority, ['claude', 'gemini', 'vibe']);
+    assert.deepEqual(priority, ['claude', 'codex', 'gemini', 'vibe']);
   });
 
   it('returns undefined for unknown engine names', () => {
@@ -84,11 +84,55 @@ describe('registry contents', () => {
     assert.ok(args.includes('bypassPermissions'));
   });
 
-  it('gemini entry sets the trust-workspace env var and is a default advisor', () => {
+  it('gemini entry sets the trust-workspace env var and is OPT-IN (API-billed)', () => {
     const g = getEngineConfig('gemini');
     assert.ok(g);
     assert.equal(g!.env?.GEMINI_CLI_TRUST_WORKSPACE, 'true');
-    assert.equal(g!.inDefaultAdvisors, true, 'gemini was promoted from opt-in to default advisor');
+    // Reverted from default-on (v0.4.x) — gemini per-token billing can blow a
+    // monthly spending cap. Codex took the cheap-second-advisor slot.
+    assert.equal(g!.inDefaultAdvisors, false, 'gemini is opt-in to keep defaults on flat-rate engines');
+  });
+
+  it('codex entry uses `exec --json` + read-only sandbox + skip-git-repo, and is a default advisor', () => {
+    const c = getEngineConfig('codex');
+    assert.ok(c);
+    assert.equal(c!.inDefaultAdvisors, true, 'codex on ChatGPT Plus is flat-rate — the cheap second-advisor default');
+    assert.equal(c!.inSynthesisPriority, true);
+    const saved = process.env.SENATE_CODEX_MODEL;
+    delete process.env.SENATE_CODEX_MODEL;  // ensure default-path
+    try {
+      const args = c!.args('hi');
+      assert.equal(args[0], 'exec');
+      assert.equal(args[1], 'hi');
+      assert.ok(args.includes('--json'));
+      assert.ok(args.includes('--skip-git-repo-check'));
+      // read-only sandbox: codex may read files referenced in the prompt but
+      // never exec shell commands or write — same surface as claude/gemini consults.
+      const sIdx = args.indexOf('-s');
+      assert.ok(sIdx >= 0 && args[sIdx + 1] === 'read-only');
+      // -m is OMITTED by default. Passing `-m gpt-5-codex` on a ChatGPT-account
+      // session returns a 400 from the codex CLI ("model not supported when
+      // using Codex with a ChatGPT account"). Default path = let codex auto-route.
+      assert.equal(args.indexOf('-m'), -1, 'codex must NOT pass -m by default — auto-route based on auth surface');
+    } finally {
+      if (saved !== undefined) process.env.SENATE_CODEX_MODEL = saved;
+    }
+  });
+
+  it('SENATE_CODEX_MODEL env override appends -m <model>', () => {
+    const c = getEngineConfig('codex');
+    assert.ok(c);
+    const saved = process.env.SENATE_CODEX_MODEL;
+    try {
+      process.env.SENATE_CODEX_MODEL = 'o3-mini';
+      const args = c!.args('hi');
+      const mIdx = args.indexOf('-m');
+      assert.ok(mIdx >= 0, 'when SENATE_CODEX_MODEL is set, args must include -m');
+      assert.equal(args[mIdx + 1], 'o3-mini');
+    } finally {
+      if (saved === undefined) delete process.env.SENATE_CODEX_MODEL;
+      else process.env.SENATE_CODEX_MODEL = saved;
+    }
   });
 
   it('vibe is NOT in default advisors (execution grunt, not advisor)', () => {
@@ -117,8 +161,9 @@ describe('registry contents', () => {
     }
   });
 
-  it('claude and gemini have generous advisor timeouts (JSON output buffers full response)', () => {
+  it('claude, codex, and gemini have generous advisor timeouts (JSON output buffers full response)', () => {
     assert.ok(getEngineConfig('claude')!.advisorInactivityMs >= 60000);
+    assert.ok(getEngineConfig('codex')!.advisorInactivityMs >= 60000);
     assert.ok(getEngineConfig('gemini')!.advisorInactivityMs >= 60000);
   });
 });
@@ -143,8 +188,14 @@ describe('getAuthPatterns (per-engine, no cross-contamination)', () => {
     assert.ok(getAuthPatterns('vibe').includes('please run vibe --setup'));
   });
 
+  it('codex has its login-prompt patterns', () => {
+    const pats = getAuthPatterns('codex');
+    assert.ok(pats.includes('please run codex login'));
+    assert.ok(pats.includes('not logged in'));
+  });
+
   it('all engines accept the generic "authentication failed" pattern', () => {
-    for (const name of ['claude', 'vibe', 'gemini']) {
+    for (const name of ['claude', 'codex', 'vibe', 'gemini']) {
       assert.ok(
         getAuthPatterns(name).includes('authentication failed'),
         `${name} should match "authentication failed"`
