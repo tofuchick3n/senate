@@ -151,8 +151,15 @@ export function parseCodexJsonl(stdout: string): { text: string; usage?: EngineU
   }
   if (!sawUsage) return { text };
 
-  const totalOutput = (outputTokens ?? 0) + (reasoningTokens ?? 0);
-  const totalTokens = (inputTokens ?? 0) + totalOutput;
+  // Only sum when components are actually present — mirrors `parseClaudeJson`'s
+  // pattern. Defaulting missing fields to 0 would surface misleading zeroes in
+  // the USAGE footer (gemini-code-assist flagged this on PR #39).
+  const totalOutput = (outputTokens !== undefined || reasoningTokens !== undefined)
+    ? (outputTokens ?? 0) + (reasoningTokens ?? 0)
+    : undefined;
+  const totalTokens = (inputTokens !== undefined && totalOutput !== undefined)
+    ? inputTokens + totalOutput
+    : undefined;
   return {
     text,
     usage: {

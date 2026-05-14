@@ -171,4 +171,31 @@ describe('parseCodexJsonl', () => {
     assert.equal(r.text, 'partial');
     assert.equal(r.usage, undefined);
   });
+
+  it('leaves totals undefined (not 0) when usage components are missing', () => {
+    // turn.completed with empty usage — sawUsage=true but no numeric fields.
+    // Reporting 0 would be misleading in the USAGE footer.
+    const stream = [
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }),
+      JSON.stringify({ type: 'turn.completed', usage: {} })
+    ].join('\n');
+    const r = parseCodexJsonl(stream);
+    assert.ok(r.usage);
+    assert.equal(r.usage!.inputTokens, undefined);
+    assert.equal(r.usage!.outputTokens, undefined);
+    assert.equal(r.usage!.totalTokens, undefined);
+  });
+
+  it('reports outputTokens but not totalTokens when only output side is known', () => {
+    // input_tokens missing, output_tokens present → we can sum the output side
+    // but cannot give a meaningful grand total.
+    const stream = [
+      JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'ok' } }),
+      JSON.stringify({ type: 'turn.completed', usage: { output_tokens: 7, reasoning_output_tokens: 3 } })
+    ].join('\n');
+    const r = parseCodexJsonl(stream);
+    assert.equal(r.usage!.inputTokens, undefined);
+    assert.equal(r.usage!.outputTokens, 10);
+    assert.equal(r.usage!.totalTokens, undefined);  // unknown without inputTokens
+  });
 });
