@@ -239,13 +239,22 @@ export function formatWorkflowResult(result: WorkflowResult): string {
   lines.push(rule);
   lines.push(`  USAGE`);
   lines.push(rule);
+  // Token-only footer. costUsd is intentionally NOT rendered in human output:
+  // claude is the only engine that surfaces a `total_cost_usd` field, and it's
+  // computed at list-price API rates regardless of whether the user is on a
+  // Claude subscription (Pro/Max — flat-rate) or actually paying per token.
+  // Codex on ChatGPT Plus and vibe on Mistral Pro are also flat-rate. Showing
+  // a $ figure that doesn't reflect the user's actual spend was misleading.
+  // The `costUsd` field is still preserved on `EngineResult.usage` for
+  // `--json` / `--json-stream` consumers (and `sumCostUsd` still works) — only
+  // the human renderer hides it. API-auth claude users who want a per-run
+  // estimate can compute it from tokens + their per-token rate.
   const formatUsage = (u: EngineUsage | undefined): string => {
-    if (!u) return '';
-    const tokens = u.totalTokens != null
-      ? `${u.totalTokens} tok` + (u.inputTokens != null && u.outputTokens != null ? ` (${u.inputTokens} in / ${u.outputTokens} out)` : '')
+    if (!u || u.totalTokens == null) return '';
+    const breakdown = (u.inputTokens != null && u.outputTokens != null)
+      ? ` (${u.inputTokens} in / ${u.outputTokens} out)`
       : '';
-    const cost = u.costUsd != null ? `  $${u.costUsd.toFixed(4)}` : '';
-    return tokens ? `  ${tokens}${cost}` : cost;
+    return `  ${u.totalTokens} tok${breakdown}`;
   };
   for (const r of result.advisorResults) {
     lines.push(`  ${r.name.padEnd(20)} ${formatElapsed(r.durationMs).padStart(7)}${formatUsage(r.usage)}`);
@@ -254,20 +263,19 @@ export function formatWorkflowResult(result: WorkflowResult): string {
     lines.push(`  ${('synthesis (' + result.synthesis.engine + ')').padEnd(20)} ${formatElapsed(result.synthesis.durationMs).padStart(7)}`);
   }
   if (result.executionResult) {
-    // Vibe-execute reports tokens via the session log (no costUsd on Pro plan).
     lines.push(`  ${'execute (vibe)'.padEnd(20)} ${formatElapsed(result.executionResult.durationMs).padStart(7)}${formatUsage(result.executionResult.usage)}`);
   }
   lines.push(`  ${'─'.repeat(20)} ${'─'.repeat(7)}`);
-  const totalCostUsd = sumCostUsd(result);
-  const totalLine = `  ${'total'.padEnd(20)} ${formatElapsed(result.totalDurationMs).padStart(7)}`;
-  lines.push(totalCostUsd != null ? `${totalLine}              $${totalCostUsd.toFixed(4)}` : totalLine);
+  lines.push(`  ${'total'.padEnd(20)} ${formatElapsed(result.totalDurationMs).padStart(7)}`);
   lines.push('');
 
   return lines.join('\n');
 }
 
-// Sum costUsd across advisors. Returns null if no engine reported a cost
-// (all gemini-only runs, vibe-only runs) so we don't show a misleading $0.0000.
+// Sum costUsd across engines that reported one. Returns null when none did.
+// Kept exported for `--json` / `--json-stream` consumers that may want a
+// list-price-equivalent rollup; the human-format renderer no longer surfaces
+// this (see the comment in `formatWorkflowResult` for the rationale).
 export function sumCostUsd(result: WorkflowResult): number | null {
   let total = 0;
   let any = false;

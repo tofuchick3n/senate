@@ -228,20 +228,22 @@ Writes are best-effort — IO failures never block the run, just print one warni
 
 ## Cost & timing
 
-The human-mode footer shows per-engine wall-clock, tokens, and cost where available:
+The human-mode footer shows per-engine wall-clock and tokens:
 
 ```
 ────────────────────────────────────────────────────────────
   USAGE
 ────────────────────────────────────────────────────────────
-  claude                  4.8s  12 tok (6 in / 6 out)  $0.1233
-  gemini                  4.6s  12016 tok (3530 in / 27 out)
+  claude                  4.8s  12 tok (6 in / 6 out)
+  codex                  22.0s  16145 tok (15032 in / 1113 out)
   synthesis (claude)      4.9s
   ──────────────────── ───────
   total                   9.6s
 ```
 
-Tokens come from each engine's JSON output mode (claude and gemini). Vibe stays on text mode and doesn't surface tokens — only its wall-clock shows up. The same data is on `EngineResult.usage` for `--json` consumers.
+Tokens come from each engine's JSON output mode (claude, codex, gemini). Vibe surfaces tokens via its session log when run through a wrapper. The same data lives on `EngineResult.usage` for `--json` / `--json-stream` consumers.
+
+**Why no `$` in the footer.** The dominant senate path now runs on flat-rate subscriptions (claude Pro/Max + codex ChatGPT Plus + vibe Mistral Pro), where a per-call dollar figure doesn't reflect actual spend. Claude's CLI still reports `total_cost_usd` at list-price API rates regardless of subscription state — senate preserves that field on `EngineResult.usage.costUsd` for JSON consumers and `sumCostUsd(result)` callers, but the human renderer hides it to avoid showing a misleading number. API-auth users who want a per-run estimate can compute it from tokens + their per-token rate.
 
 ## Live dashboard
 
